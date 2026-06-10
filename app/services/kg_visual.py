@@ -23,11 +23,7 @@ def find_node(node_id: str) -> dict | None:
 
 def find_link_idx(source: str, target: str, relation: str) -> int | None:
     for idx, link in enumerate(_graph_data["links"]):
-        if (
-            link["source"] == source
-            and link["target"] == target
-            and link["relation"] == relation
-        ):
+        if link["source"] == source and link["target"] == target and link["relation"] == relation:
             return idx
     return None
 
@@ -52,7 +48,9 @@ def add_node(body: KGVisualNode) -> dict:
     return graph_response(f"节点 '{body.id}' 已添加")
 
 
-def update_node(node: dict, *, name: str | None, category: str | None, properties: dict | None) -> dict:
+def update_node(
+    node: dict, *, name: str | None, category: str | None, properties: dict | None
+) -> dict:
     if name is not None:
         node["name"] = name
     if category is not None:
@@ -96,19 +94,40 @@ def load_example_graph() -> dict:
             "id": "李白",
             "name": "李白",
             "category": "人物",
-            "properties": {"字": "太白", "号": "青莲居士", "朝代": "唐", "生卒年": "701-762", "籍贯": "碎叶城", "职业": "诗人"},
+            "properties": {
+                "字": "太白",
+                "号": "青莲居士",
+                "朝代": "唐",
+                "生卒年": "701-762",
+                "籍贯": "碎叶城",
+                "职业": "诗人",
+            },
         },
         {
             "id": "杜甫",
             "name": "杜甫",
             "category": "人物",
-            "properties": {"字": "子美", "号": "少陵野老", "朝代": "唐", "生卒年": "712-770", "籍贯": "巩县", "职业": "诗人"},
+            "properties": {
+                "字": "子美",
+                "号": "少陵野老",
+                "朝代": "唐",
+                "生卒年": "712-770",
+                "籍贯": "巩县",
+                "职业": "诗人",
+            },
         },
         {
             "id": "白居易",
             "name": "白居易",
             "category": "人物",
-            "properties": {"字": "乐天", "号": "香山居士", "朝代": "唐", "生卒年": "772-846", "籍贯": "新郑", "职业": "诗人"},
+            "properties": {
+                "字": "乐天",
+                "号": "香山居士",
+                "朝代": "唐",
+                "生卒年": "772-846",
+                "籍贯": "新郑",
+                "职业": "诗人",
+            },
         },
         {
             "id": "唐朝",
@@ -132,23 +151,56 @@ def load_example_graph() -> dict:
             "id": "春望",
             "name": "春望",
             "category": "作品",
-            "properties": {"体裁": "五言律诗", "创作年份": "757年", "名句": "国破山河在，城春草木深"},
+            "properties": {
+                "体裁": "五言律诗",
+                "创作年份": "757年",
+                "名句": "国破山河在，城春草木深",
+            },
         },
         {
             "id": "长恨歌",
             "name": "长恨歌",
             "category": "作品",
-            "properties": {"体裁": "长篇叙事诗", "创作年份": "806年", "名句": "天长地久有时尽，此恨绵绵无绝期"},
+            "properties": {
+                "体裁": "长篇叙事诗",
+                "创作年份": "806年",
+                "名句": "天长地久有时尽，此恨绵绵无绝期",
+            },
         },
     ]
     _graph_data["links"] = [
         {"source": "李白", "target": "唐朝", "relation": "生活于", "properties": {"时期": "盛唐"}},
-        {"source": "杜甫", "target": "唐朝", "relation": "生活于", "properties": {"时期": "盛唐→中唐"}},
-        {"source": "白居易", "target": "唐朝", "relation": "生活于", "properties": {"时期": "中唐"}},
-        {"source": "李白", "target": "杜甫", "relation": "交友", "properties": {"描述": "李杜相遇，诗坛佳话", "相遇年份": "744年"}},
+        {
+            "source": "杜甫",
+            "target": "唐朝",
+            "relation": "生活于",
+            "properties": {"时期": "盛唐→中唐"},
+        },
+        {
+            "source": "白居易",
+            "target": "唐朝",
+            "relation": "生活于",
+            "properties": {"时期": "中唐"},
+        },
+        {
+            "source": "李白",
+            "target": "杜甫",
+            "relation": "交友",
+            "properties": {"描述": "李杜相遇，诗坛佳话", "相遇年份": "744年"},
+        },
         {"source": "李白", "target": "蜀道难", "relation": "创作", "properties": {}},
-        {"source": "杜甫", "target": "春望", "relation": "创作", "properties": {"背景": "安史之乱"}},
-        {"source": "白居易", "target": "长恨歌", "relation": "创作", "properties": {"背景": "唐玄宗与杨贵妃故事"}},
+        {
+            "source": "杜甫",
+            "target": "春望",
+            "relation": "创作",
+            "properties": {"背景": "安史之乱"},
+        },
+        {
+            "source": "白居易",
+            "target": "长恨歌",
+            "relation": "创作",
+            "properties": {"背景": "唐玄宗与杨贵妃故事"},
+        },
         {"source": "唐朝", "target": "长安", "relation": "定都", "properties": {}},
     ]
     return graph_response("示例图谱已加载")

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
-from app.routers.entity_linking import router as entity_linking_router
+
 from app.routers.entity_extraction import router as entity_extraction_router
+from app.routers.entity_linking import router as entity_linking_router
 from app.routers.graphrag_demo import router as graphrag_demo_router
 from app.routers.kg_visual import page_router as kg_visual_page_router
 from app.routers.kg_visual import router as kg_visual_router
