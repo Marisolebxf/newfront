@@ -70,9 +70,9 @@ def main() -> None:
             continue
 
         sql_files = sorted(domain_dir.glob("*.sql"))
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Domain: {domain} ({len(sql_files)} files)")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         for sql_file in sql_files:
             try:
@@ -86,9 +86,9 @@ def main() -> None:
     cursor.close()
     conn.close()
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Done. Success: {total}, Failed: {errors}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     if errors:
         sys.exit(1)
