@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 
 from biz.router.register import register_routers
 
@@ -9,6 +12,15 @@ app = FastAPI(
 )
 
 register_routers(app)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+FRONTEND_INDEX = PROJECT_ROOT / "frontend" / "index.html"
+
+
+@app.get("/", include_in_schema=False)
+@app.get("/binding", include_in_schema=False)
+async def serve_frontend_index() -> FileResponse:
+    return FileResponse(FRONTEND_INDEX)
 
 
 @app.get("/health", tags=["system"])

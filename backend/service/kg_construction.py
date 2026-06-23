@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from __future__ import annotations
+
 from service.module_catalog import get_kg_construction_module, list_kg_construction_modules
 
 

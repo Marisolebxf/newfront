@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 KG_CONSTRUCTION_MODULES: tuple[dict[str, object], ...] = (
     {
         "code": "expert_direct_relation",
