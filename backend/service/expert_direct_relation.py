@@ -1,434 +1,285 @@
+"""科技专家直接关系服务：MySQL分析 + 图数据库读写。
+
+完整流程：
+1. 从 MySQL 查两位学者信息，判定直接关系依据（同机构/共论文/同方向）
+2. 从图数据库查询/写入 DIRECT_RELATION 边
+3. 分析结果回写丰富图数据库
+4. 返回结构化结果 + 图谱节点给前端
+"""
+
 from __future__ import annotations
 
-from datetime import datetime
+import logging
 from typing import Any
 
+from sqlalchemy import and_, select
+from sqlalchemy.orm import Session
+
+from db_model.scholar import DwdScholar, DwdScholarCoauthor, DwdScholarResearchDirection
+from infra.graph_db import get_techkg_client
+from infra.mysql import get_mysql_client
 from service.base_module import KGModuleScaffoldService
 
+logger = logging.getLogger(__name__)
 
-EXPERT_DIRECT_RELATION_FALLBACK_DATA: list[dict[str, Any]] = [
-    {
-        "key": "expert-fallback-01",
-        "label": "科技专家直接关系（张明远 / 李佳宁）",
-        "last_test_time": "2026-07-23 11:00:00",
-        "expert_a": {"id": "fallback_zhangmingyuan", "name": "张明远", "title": "研究员"},
-        "expert_b": {"id": "fallback_lijianing", "name": "李佳宁", "title": "副研究员"},
-        "relation_type": "直接关系",
-        "institution": "中国科学院自动化研究所",
-        "directions": ["知识图谱", "机器学习"],
-        "duration": "",
-        "achievements": [],
-        "api_example": {
-            "relation_type": "expert_direct_relation",
-            "relation_subtype": "direct",
-            "expert_a": {"name": "张明远", "title": "研究员"},
-            "expert_b": {"name": "李佳宁", "title": "副研究员"},
-            "institution": "中国科学院自动化研究所",
-            "reasons": ["同机构", "共论文"],
-            "relation_strength": 82,
-            "relation_summary": "同机构 + 共论文",
-        },
-    },
-    {
-        "key": "expert-fallback-02",
-        "label": "科技专家直接关系（李佳宁 / 周欣怡）",
-        "last_test_time": "2026-07-23 11:10:00",
-        "expert_a": {"id": "fallback_lijianing", "name": "李佳宁", "title": "副研究员"},
-        "expert_b": {"id": "fallback_zhouxinyi", "name": "周欣怡", "title": "教授"},
-        "relation_type": "直接关系",
-        "institution": "智能决策联合实验室",
-        "directions": ["智能决策", "知识工程"],
-        "duration": "",
-        "achievements": [],
-        "api_example": {
-            "relation_type": "expert_direct_relation",
-            "relation_subtype": "direct",
-            "expert_a": {"name": "李佳宁", "title": "副研究员"},
-            "expert_b": {"name": "周欣怡", "title": "教授"},
-            "institution": "智能决策联合实验室",
-            "reasons": ["共项目", "Co-Author"],
-            "relation_strength": 79,
-            "relation_summary": "共项目 + Co-Author",
-        },
-    },
-    {
-        "key": "expert-fallback-03",
-        "label": "科技专家直接关系（周欣怡 / 赵文博）",
-        "last_test_time": "2026-08-01 15:40:00",
-        "expert_a": {"id": "fallback_zhouxinyi", "name": "周欣怡", "title": "教授"},
-        "expert_b": {"id": "fallback_zhaowenbo", "name": "赵文博", "title": "副教授"},
-        "relation_type": "直接关系",
-        "institution": "北京航空航天大学计算机学院",
-        "directions": ["智能决策", "大模型"],
-        "duration": "",
-        "achievements": [],
-        "api_example": {
-            "relation_type": "expert_direct_relation",
-            "relation_subtype": "direct",
-            "expert_a": {"name": "周欣怡", "title": "教授"},
-            "expert_b": {"name": "赵文博", "title": "副教授"},
-            "institution": "北京航空航天大学计算机学院",
-            "reasons": ["同机构", "共专利", "共论文"],
-            "relation_strength": 91,
-            "relation_summary": "同机构 + 共专利 + 共论文",
-        },
-    },
-    {
-        "key": "expert-fallback-04",
-        "label": "科技专家直接关系（赵文博 / 陈星宇）",
-        "last_test_time": "2026-08-05 10:20:00",
-        "expert_a": {"id": "fallback_zhaowenbo", "name": "赵文博", "title": "副教授"},
-        "expert_b": {"id": "fallback_chenxingyu", "name": "陈星宇", "title": "研究员"},
-        "relation_type": "直接关系",
-        "institution": "清华大学智能产业研究院",
-        "directions": ["大模型", "产业智能"],
-        "duration": "",
-        "achievements": [],
-        "api_example": {
-            "relation_type": "expert_direct_relation",
-            "relation_subtype": "direct",
-            "expert_a": {"name": "赵文博", "title": "副教授"},
-            "expert_b": {"name": "陈星宇", "title": "研究员"},
-            "institution": "清华大学智能产业研究院",
-            "reasons": ["共项目", "共论文"],
-            "relation_strength": 84,
-            "relation_summary": "共项目 + 共论文",
-        },
-    },
-    {
-        "key": "expert-fallback-05",
-        "label": "科技专家直接关系（陈星宇 / 刘成）",
-        "last_test_time": "2026-08-09 09:15:00",
-        "expert_a": {"id": "fallback_chenxingyu", "name": "陈星宇", "title": "研究员"},
-        "expert_b": {"id": "fallback_liucheng", "name": "刘成", "title": "高级工程师"},
-        "relation_type": "直接关系",
-        "institution": "国家智能计算实验室",
-        "directions": ["算力调度", "智能计算"],
-        "duration": "",
-        "achievements": [],
-        "api_example": {
-            "relation_type": "expert_direct_relation",
-            "relation_subtype": "direct",
-            "expert_a": {"name": "陈星宇", "title": "研究员"},
-            "expert_b": {"name": "刘成", "title": "高级工程师"},
-            "institution": "国家智能计算实验室",
-            "reasons": ["Co-Author", "共专利"],
-            "relation_strength": 80,
-            "relation_summary": "Co-Author + 共专利",
-        },
-    },
-    {
-        "key": "expert-fallback-06",
-        "label": "科技专家直接关系（刘成 / 张明远）",
-        "last_test_time": "2026-08-12 14:00:00",
-        "expert_a": {"id": "fallback_liucheng", "name": "刘成", "title": "高级工程师"},
-        "expert_b": {"id": "fallback_zhangmingyuan", "name": "张明远", "title": "研究员"},
-        "relation_type": "直接关系",
-        "institution": "国家智能计算实验室",
-        "directions": ["智能计算", "知识图谱"],
-        "duration": "",
-        "achievements": [],
-        "api_example": {
-            "relation_type": "expert_direct_relation",
-            "relation_subtype": "direct",
-            "expert_a": {"name": "刘成", "title": "高级工程师"},
-            "expert_b": {"name": "张明远", "title": "研究员"},
-            "institution": "国家智能计算实验室",
-            "reasons": ["共项目", "同机构"],
-            "relation_strength": 78,
-            "relation_summary": "共项目 + 同机构",
-        },
-    },
-]
+EDGE_TYPE = "DIRECT_RELATION"
+
+
+def _parse_directions(fields_text: str | None) -> list[str]:
+    if not fields_text:
+        return []
+    return [d.strip() for d in fields_text.replace("；", ";").split(";") if d.strip()]
 
 
 class ExpertDirectRelationService(KGModuleScaffoldService):
     module_code = "expert_direct_relation"
 
-    def build_relation_response(
-        self,
-        data_source: str = "all",
-        expert_a_id: str | None = None,
-        expert_b_id: str | None = None,
-        institution: str | None = None,
-        relation_type: str = "direct",
-        start_time: str | None = None,
-        end_time: str | None = None,
-    ) -> dict[str, list[dict[str, Any]]]:
-        query_params = {
-            "dataSource": (data_source or "all").strip().lower(),
-            "expertAId": (expert_a_id or "").strip(),
-            "expertBId": (expert_b_id or "").strip(),
-            "institution": (institution or "").strip(),
-            "relationType": (relation_type or "direct").strip().lower(),
-            "startTime": (start_time or "").strip(),
-            "endTime": (end_time or "").strip(),
-        }
-        scenarios = self._build_scenarios(query_params["dataSource"], query_params["relationType"])
-        scenarios = self._filter_scenarios(scenarios, query_params)
-        for scenario in scenarios:
-            scenario["api_example"]["query_params"] = dict(query_params)
-        return {"scenarios": scenarios}
+    def analyze(self, payload: dict[str, Any]) -> dict[str, Any]:
+        expert_a_id = payload["expertAId"]
+        expert_b_id = payload["expertBId"]
 
-    def _build_scenarios(self, data_source: str, relation_type: str) -> list[dict[str, Any]]:
-        normalized_source = (data_source or "all").strip().lower()
-        normalized_relation = (relation_type or "direct").strip().lower()
-
-        scenarios = [self._build_scenario(item) for item in EXPERT_DIRECT_RELATION_FALLBACK_DATA]
-
-        if normalized_source in {"all", "graph", "real"}:
-            scenarios = list(scenarios)
-
-        if normalized_relation in {"two_hop", "three_hop"} and len(scenarios) > 1:
-            scenarios = self._select_hop_scenarios(scenarios, normalized_relation)
-
-        return scenarios
-
-    @staticmethod
-    def _scenario_complexity_score(scenario: dict[str, Any]) -> tuple[int, float]:
-        api_example = scenario.get("api_example") or {}
-        reasons = api_example.get("reasons") or []
-        if not isinstance(reasons, list):
-            reasons = [reasons]
-        reason_count = len([reason for reason in reasons if str(reason).strip()])
-        relation_strength = float(api_example.get("relation_strength") or 0.0)
-        return reason_count, relation_strength
-
-    def _select_hop_scenarios(self, scenarios: list[dict[str, Any]], relation_type: str) -> list[dict[str, Any]]:
-        ranked = []
-        for index, scenario in enumerate(scenarios):
-            reason_count, relation_strength = self._scenario_complexity_score(scenario)
-            complexity_score = float(reason_count * 10 + relation_strength)
-            ranked.append((complexity_score, reason_count, relation_strength, index, scenario))
-
-        ranked.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
-        pivot = max(1, len(ranked) // 2)
-        if relation_type == "two_hop":
-            selected = ranked[:pivot]
-        else:
-            selected = ranked[pivot:] or ranked[-pivot:]
-        return [item[4] for item in selected]
-
-    def _filter_scenarios(
-        self,
-        scenarios: list[dict[str, Any]],
-        query_params: dict[str, str],
-    ) -> list[dict[str, Any]]:
-        expert_a_query = query_params.get("expertAId", "")
-        expert_b_query = query_params.get("expertBId", "")
-        institution_query = query_params.get("institution", "")
-        relation_query = query_params.get("relationType", "direct")
-        start_dt = self._parse_query_datetime(query_params.get("startTime", ""))
-        end_dt = self._parse_query_datetime(query_params.get("endTime", ""))
-
-        def get_row_value(scenario: dict[str, Any], row_key: str) -> Any:
-            for key, value in scenario.get("detail_rows", []):
-                if key == row_key:
-                    return value
-            return ""
-
-        def match_expert(scenario: dict[str, Any], side: str, query: str) -> bool:
-            if not query or query == "全部":
-                return True
-            query_text = query.lower()
-            expert = scenario.get("api_example", {}).get("expert_a" if side == "a" else "expert_b", {})
-            row_name = str(get_row_value(scenario, "专家 A" if side == "a" else "专家 B"))
-            graph_nodes = [node for node in scenario.get("graph", {}).get("nodes", []) if node.get("kind") == ("expertA" if side == "a" else "expertB")]
-            values = [row_name, str(expert.get("name", "")), str(expert.get("id", ""))]
-            values.extend([node.get("id", "") for node in graph_nodes])
-            values.extend([node.get("subtitle", "") for node in graph_nodes])
-            return any(query_text in str(value).lower() for value in values if value)
-
-        def match_institution(scenario: dict[str, Any]) -> bool:
-            if not institution_query or institution_query == "全部":
-                return True
-            query_text = institution_query.lower()
-            values = [
-                str(scenario.get("api_example", {}).get("institution", "")),
-                str(get_row_value(scenario, "直接关系")),
-            ]
-            values.extend([node.get("subtitle", "") for node in scenario.get("graph", {}).get("nodes", []) if node.get("kind") == "institution"])
-            return any(query_text in str(value).lower() for value in values if value)
-
-        def match_relation(scenario: dict[str, Any]) -> bool:
-            normalized = (relation_query or "direct").strip().lower()
-            if normalized in {"", "all", "direct", "two_hop", "three_hop"}:
-                return True
-            reasons = scenario.get("api_example", {}).get("reasons") or get_row_value(scenario, "判定依据") or []
-            if not isinstance(reasons, list):
-                reasons = [reasons]
-            return any(normalized in str(reason).lower() for reason in reasons)
-
-        def match_time(scenario: dict[str, Any]) -> bool:
-            test_dt = self._parse_query_datetime(scenario.get("last_test_time", ""))
-            if not test_dt:
-                return True
-            if start_dt and test_dt < start_dt:
-                return False
-            if end_dt and test_dt > end_dt:
-                return False
-            return True
-
-        return [
-            scenario
-            for scenario in scenarios
-            if match_expert(scenario, "a", expert_a_query)
-            and match_expert(scenario, "b", expert_b_query)
-            and match_institution(scenario)
-            and match_relation(scenario)
-            and match_time(scenario)
-        ]
-
-    @staticmethod
-    def _parse_query_datetime(raw_value: str | None) -> datetime | None:
-        if not raw_value:
-            return None
-        value = raw_value.strip()
-        if not value:
-            return None
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(value, fmt)
-            except ValueError:
-                continue
+        session = get_mysql_client().session()
         try:
-            return datetime.fromisoformat(value)
-        except ValueError:
-            return None
+            expert_a = self._get_scholar(session, expert_a_id)
+            expert_b = self._get_scholar(session, expert_b_id)
+            reasons, institution, directions = self._compute_relation(
+                session, expert_a_id, expert_b_id, expert_a, expert_b
+            )
+        finally:
+            session.close()
 
-    @staticmethod
-    def _build_scenario(item: dict[str, Any]) -> dict[str, Any]:
-        expert_a = item["expert_a"]
-        expert_b = item["expert_b"]
-        institution = item["institution"]
-        relation_type = item["relation_type"]
-        directions = item.get("directions", [])
-        achievements = item.get("achievements", [])
-        graph = ExpertDirectRelationService._build_relation_graph(
-            expert_a=expert_a,
-            expert_b=expert_b,
-            relation_type=relation_type,
-            institution=institution,
-            directions=directions,
-            duration=item.get("duration", ""),
-            achievements=achievements,
-            expert_a_id=str(expert_a.get("id") or expert_a.get("name") or "expertA"),
-            expert_b_id=str(expert_b.get("id") or expert_b.get("name") or "expertB"),
+        strength = min(100, len(reasons) * 30 + 20)
+
+        # 同步图数据库
+        graph_data = self._sync_graph(
+            expert_a_id, expert_b_id, reasons, strength, institution, directions
         )
-        detail_rows = [
-            ["专家 A", expert_a["name"]],
-            ["专家 A 职称", expert_a["title"]],
-            ["专家 B", expert_b["name"]],
-            ["专家 B 职称", expert_b["title"]],
-            ["关系类型", f"科技专家直接关系 / {relation_type}"],
-            ["直接关系", institution],
-            ["判定依据", item.get("api_example", {}).get("reasons", [])],
-            ["关系强度", item.get("api_example", {}).get("relation_strength", 0)],
-            ["关系摘要", item.get("api_example", {}).get("relation_summary", "")],
-        ]
-        return {
-            "key": item["key"],
-            "label": item["label"],
-            "last_test_time": item["last_test_time"],
-            "graph": graph,
-            "detail_rows": detail_rows,
-            "api_example": dict(item["api_example"]),
+
+        relation = {
+            "reasons": reasons,
+            "relationStrength": strength,
+            "institution": institution,
+            "directions": directions,
         }
 
-    @staticmethod
-    def _build_relation_graph(
-        expert_a: dict[str, str],
-        expert_b: dict[str, str],
-        relation_type: str,
+        graph_nodes, graph_edges = self._build_graph_view(expert_a, expert_b, relation)
+
+        return {
+            "status": "success",
+            "expertA": expert_a,
+            "expertB": expert_b,
+            "relation": relation,
+            "graphNodes": graph_nodes,
+            "graphEdges": graph_edges,
+        }
+
+    def build(self, payload: dict[str, Any]) -> dict[str, Any]:
+        expert_a_id = payload["expertAId"]
+        expert_b_id = payload["expertBId"]
+
+        session = get_mysql_client().session()
+        try:
+            expert_a = self._get_scholar(session, expert_a_id)
+            expert_b = self._get_scholar(session, expert_b_id)
+            reasons, institution, directions = self._compute_relation(
+                session, expert_a_id, expert_b_id, expert_a, expert_b
+            )
+        finally:
+            session.close()
+
+        if not reasons:
+            return {
+                "status": "success",
+                "edgeId": None,
+                "relationStrength": 0,
+                "reasons": [],
+                "message": "未发现两人之间的直接关系依据",
+            }
+
+        strength = min(100, len(reasons) * 30 + 20)
+        graph_data = self._sync_graph(
+            expert_a_id, expert_b_id, reasons, strength, institution, directions
+        )
+
+        return {
+            "status": "success",
+            "edgeId": graph_data.get("edge_id"),
+            "relationStrength": strength,
+            "reasons": reasons,
+            "message": f"已写入图数据库 DIRECT_RELATION 边，关系强度 {strength}",
+        }
+
+    # ---------- MySQL 查询 ----------
+
+    def _get_scholar(self, session: Session, scholar_id: str) -> dict[str, Any]:
+        scholar = session.get(DwdScholar, scholar_id)
+        if not scholar:
+            raise KeyError(f"学者不存在: {scholar_id}")
+        return {
+            "expertId": scholar.scholar_id,
+            "name": scholar.name_zh or scholar.name_en or scholar.scholar_id,
+            "organization": scholar.scholar_org_name_zh or scholar.scholar_org_name_en or "",
+            "paperCount": scholar.paper_nums or 0,
+            "citationCount": scholar.citation_nums or 0,
+            "hIndex": float(scholar.h_index or 0),
+        }
+
+    def _compute_relation(
+        self,
+        session: Session,
+        expert_a_id: str,
+        expert_b_id: str,
+        expert_a: dict,
+        expert_b: dict,
+    ) -> tuple[list[str], str, list[str]]:
+        """计算直接关系的依据。返回 (reasons, institution, common_directions)。"""
+        reasons: list[str] = []
+        institution = ""
+        common_directions: list[str] = []
+
+        # 同机构
+        org_a = expert_a.get("organization", "").strip()
+        org_b = expert_b.get("organization", "").strip()
+        if org_a and org_b and org_a == org_b:
+            reasons.append("同机构")
+            institution = org_a
+
+        # 共论文
+        stmt = select(DwdScholarCoauthor).where(
+            and_(
+                DwdScholarCoauthor.scholar_id == expert_a_id,
+                DwdScholarCoauthor.co_scholar_id == expert_b_id,
+            )
+        )
+        coauthor = session.execute(stmt).scalar_one_or_none()
+        if not coauthor:
+            stmt2 = select(DwdScholarCoauthor).where(
+                and_(
+                    DwdScholarCoauthor.scholar_id == expert_b_id,
+                    DwdScholarCoauthor.co_scholar_id == expert_a_id,
+                )
+            )
+            coauthor = session.execute(stmt2).scalar_one_or_none()
+        if coauthor:
+            reasons.append("共论文")
+
+        # 同研究方向
+        dir_a_row = session.get(DwdScholarResearchDirection, expert_a_id)
+        dir_b_row = session.get(DwdScholarResearchDirection, expert_b_id)
+        dirs_a = set(_parse_directions(dir_a_row.fields if dir_a_row else None))
+        dirs_b = set(_parse_directions(dir_b_row.fields if dir_b_row else None))
+        common = dirs_a & dirs_b
+        if common:
+            reasons.append("同方向")
+            common_directions = list(common)[:5]
+
+        return reasons, institution, common_directions
+
+    # ---------- 图数据库操作 ----------
+
+    def _sync_graph(
+        self,
+        expert_a_id: str,
+        expert_b_id: str,
+        reasons: list[str],
+        strength: int,
         institution: str,
         directions: list[str],
-        duration: str,
-        achievements: list[dict[str, Any]],
-        expert_a_id: str = "expertA",
-        expert_b_id: str = "expertB",
     ) -> dict[str, Any]:
-        institution_id = f"institution-{institution}"
-        return {
-            "width": 860,
-            "height": 640,
-            "nodes": [
-                {
-                    "id": expert_a_id,
-                    "kind": "expertA",
-                    "x": 90,
-                    "y": 140,
-                    "icon": "👤",
-                    "title": f"专家A：{expert_a['name']}",
-                    "subtitle": expert_a["title"],
-                    "desc": "",
-                    "chips": list(directions[:2]),
-                    "achievements": achievements,
-                },
-                {
-                    "id": expert_b_id,
-                    "kind": "expertB",
-                    "x": 550,
-                    "y": 140,
-                    "icon": "👤",
-                    "title": f"专家B：{expert_b['name']}",
-                    "subtitle": expert_b["title"],
-                    "desc": "",
-                    "chips": list(directions[2:4]),
-                    "achievements": achievements,
-                },
-                {
-                    "id": institution_id,
-                    "kind": "institution",
-                    "x": 270,
-                    "y": 340,
-                    "icon": "🏛",
-                    "title": "直接关系",
-                    "subtitle": institution,
-                    "desc": duration,
-                    "chips": [],
-                    "achievements": [],
-                },
-            ],
-            "edges": [
-                {
-                    "type": "curve",
-                    "from_": [276, 196],
-                    "to": [550, 196],
-                    "stroke": "#a355ec",
-                    "marker": "#a355ec",
-                    "width": 4,
-                    "label": relation_type,
-                    "label_x": 398,
-                    "label_y": 178,
-                    "label_color": "#8f52db",
-                },
-                {
-                    "type": "curve",
-                    "from_": [220, 240],
-                    "c1": [250, 290],
-                    "c2": [330, 335],
-                    "to": [402, 392],
-                    "stroke": "#6ca2ff",
-                    "marker": "#6ca2ff",
-                    "width": 4,
-                    "label": "直连",
-                    "label_x": 275,
-                    "label_y": 320,
-                    "label_color": "#6b8fd6",
-                },
-                {
-                    "type": "curve",
-                    "from_": [640, 240],
-                    "c1": [620, 290],
-                    "c2": [540, 335],
-                    "to": [458, 392],
-                    "stroke": "#6ca2ff",
-                    "marker": "#6ca2ff",
-                    "width": 4,
-                    "label": "直连",
-                    "label_x": 555,
-                    "label_y": 320,
-                    "label_color": "#6b8fd6",
-                },
-            ],
+        graph = get_techkg_client()
+        properties = {
+            "relation_subtype": "direct",
+            "reasons": "/".join(reasons),
+            "relation_strength": strength,
+            "institution": institution,
+            "directions": ";".join(directions),
+            "source": "analysis",
         }
+
+        # 查已有边
+        try:
+            existing_edges = graph.get_node_edges(
+                expert_a_id, direction="out", edge_type=EDGE_TYPE, limit=50
+            )
+            for e in existing_edges:
+                if str(e.target_id) == str(expert_b_id):
+                    graph.update_edge(str(e.id), properties=properties, edge_type=EDGE_TYPE)
+                    return {"edge_id": str(e.id), "action": "updated"}
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("query existing edges failed: %s", exc)
+
+        # 创建新边
+        if not reasons:
+            return {"edge_id": None, "action": "skip"}
+        try:
+            edge = graph.create_edge(
+                expert_a_id, expert_b_id, edge_type=EDGE_TYPE, properties=properties
+            )
+            return {"edge_id": str(edge.id) if edge else None, "action": "created"}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("create DIRECT_RELATION edge failed: %s", exc)
+            return {"edge_id": None, "action": "failed"}
+
+    # ---------- 构建图谱视图 ----------
+
+    def _build_graph_view(
+        self, expert_a: dict, expert_b: dict, relation: dict
+    ) -> tuple[list[dict], list[dict]]:
+        reasons = relation.get("reasons", [])
+        strength = relation.get("relationStrength", 0)
+        directions = relation.get("directions", [])
+
+        nodes = [
+            {
+                "id": "expertA",
+                "type": "expert",
+                "label": f"专家A：{expert_a['name']}",
+                "subtitle": expert_a.get("organization"),
+                "x": 150, "y": 300,
+            },
+            {
+                "id": "expertB",
+                "type": "expert",
+                "label": f"专家B：{expert_b['name']}",
+                "subtitle": expert_b.get("organization"),
+                "x": 750, "y": 300,
+            },
+        ]
+
+        # 关系原因作为中间节点
+        if "同机构" in reasons:
+            nodes.append({
+                "id": "institution",
+                "type": "info",
+                "label": f"机构：{relation.get('institution', '')}",
+                "subtitle": "同机构",
+                "x": 450, "y": 150,
+            })
+        if "共论文" in reasons:
+            nodes.append({
+                "id": "copaper",
+                "type": "info",
+                "label": "共同论文",
+                "subtitle": "合作发表",
+                "x": 450, "y": 450,
+            })
+        if directions:
+            nodes.append({
+                "id": "direction",
+                "type": "info",
+                "label": "研究方向",
+                "subtitle": "、".join(directions[:3]),
+                "x": 450, "y": 300,
+            })
+
+        edges = [
+            {"source": "expertA", "target": "expertB", "label": f"直接关系（强度{strength}）"},
+        ]
+        if "同机构" in reasons:
+            edges.append({"source": "expertA", "target": "institution", "label": "任职"})
+            edges.append({"source": "expertB", "target": "institution", "label": "任职"})
+        if "共论文" in reasons:
+            edges.append({"source": "expertA", "target": "copaper", "label": "发表"})
+            edges.append({"source": "expertB", "target": "copaper", "label": "发表"})
+
+        return nodes, edges

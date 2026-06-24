@@ -5,7 +5,7 @@ KG_CONSTRUCTION_MODULES: tuple[dict[str, object], ...] = (
         "code": "expert_direct_relation",
         "name": "科技专家/人才直接关系",
         "description": "识别并构建专家或人才之间的直接关联，记录关系类型、时间、场景和相关成果。",
-        "status": "scaffold",
+        "status": "active",
     },
     {
         "code": "expert_indirect_relation",
@@ -35,7 +35,7 @@ KG_CONSTRUCTION_MODULES: tuple[dict[str, object], ...] = (
         "code": "expert_paper_cooperation",
         "name": "科技专家论文合作关系",
         "description": "基于论文作者、单位、主题和发表时间，构建专家论文合作关系。",
-        "status": "scaffold",
+        "status": "active",
     },
     {
         "code": "expert_enterprise_relation",

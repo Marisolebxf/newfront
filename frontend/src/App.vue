@@ -1,1023 +1,1984 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import sidebarLogo from './assets/sidebar/logo.png'
-import sidebarMenu from './assets/sidebar/menu.png'
-import navFlowIcon from './assets/sidebar/nav-flow.png'
-import navGraphIcon from './assets/sidebar/nav-graph.png'
-import navReasonIcon from './assets/sidebar/nav-reason.png'
-import chatIcon from './assets/sidebar/chat.png'
+import { computed, onMounted, ref } from 'vue'
+import axios from 'axios'
 
-type DataSource = 'all' | 'knowledge_graph' | 'cnki' | 'wanfang' | 'web_of_science'
-type NodeId = 'expertA' | 'expertB' | 'paper' | 'topic' | 'period' | 'contribution'
+type MainTab = 'test' | 'developer'
+type ResultTab = 'structured' | 'api'
+type CodeTab = 'Python' | 'Node.js' | 'cURL'
+type GraphNodeKey = string
 
-type TestRequestPayload = {
-  dataSource: DataSource
-  expertAId: string
-  expertBId: string
-  startTime: string
-  endTime: string
-}
-
-type StructuredResultPayload = {
-  authorList: string[]
-  authorUnits: string[]
-  paperTopics: string[]
-  cooperationPaperCount: number
-  journalLevelCount: Record<string, number>
-  conferenceLevelCount: Record<string, number>
-  cooperationFrequency: number
-  academicImpactScore: number
-  citation: { total: number; max: number }
-  cooperationTimeRange: { displayText: string }
-  stableTeamName?: string | null
-  stableTeamMembers?: string[]
-  coreCollaborators?: string[]
-  sharedContribution?: string[]
-  representativePapers?: string[]
-}
-
-type StructuredResultOnlyResponse = {
-  structuredResult: StructuredResultPayload
-}
-
-type NodeLayout = {
+interface GraphNode {
+  key: GraphNodeKey
+  title: string
+  subtitle: string
+  relation?: string
   x: number
   y: number
-  w: number
-  h: number
+  width: number
+  height: number
+  kind: 'expert' | 'company'
 }
 
-type Point = {
-  x: number
-  y: number
+interface RelationSubFunction {
+  featureName: string
+  apiPath: string
+  nodes: GraphNode[]
 }
 
-const defaultParams: TestRequestPayload = {
-  dataSource: 'knowledge_graph',
-  expertAId: 'COOP-SCH001',
-  expertBId: 'COOP-SCH002',
-  startTime: '2021-01-01',
-  endTime: '2024-12-31',
+interface RelationFeature {
+  navLabel: string
+  subFunctions: RelationSubFunction[]
 }
 
-const defaultNodeLayout: Record<NodeId, NodeLayout> = {
-  expertA: { x: 6.5, y: 10, w: 30, h: 15 },
-  expertB: { x: 62.5, y: 10, w: 30, h: 15 },
-  paper: { x: 33.8, y: 37.6, w: 32.4, h: 20 },
-  topic: { x: 3.8, y: 64.6, w: 38.2, h: 26.6 },
-  period: { x: 44.3, y: 78.3, w: 16.8, h: 11.8 },
-  contribution: { x: 67.2, y: 63.8, w: 29.4, h: 27.8 },
+const mainTab = ref<MainTab>('test')
+const resultTab = ref<ResultTab>('structured')
+const activeCodeTab = ref<CodeTab>('Python')
+const showParams = ref(false)
+const showTechPlan = ref(false)
+const showFeatureMenu = ref(false)
+const isReasoningExpanded = ref(true)
+const activeFeatureLabel = ref('重点科技企业关系')
+const activeSubFunctionName = ref('专家-企业关系构建')
+const graphWidth = 1320
+const graphHeight = 960
+const graphZoom = ref(0.56)
+
+const graphStageRef = ref<HTMLElement | null>(null)
+const activeDrag = ref<{ key: GraphNodeKey; offsetX: number; offsetY: number } | null>(null)
+
+function makeRelationGraph(
+  centerTitle: string,
+  targetPrefix: string,
+  targetSubtitle: string,
+  relations: string[],
+): GraphNode[] {
+  return [
+    {
+      key: 'expert',
+      title: centerTitle,
+      subtitle: '人工智能专家',
+      x: 412,
+      y: 292,
+      width: 300,
+      height: 94,
+      kind: 'expert',
+    },
+    ...relations.map((relation, index) => {
+      const positions = [
+        { key: 'company1' as GraphNodeKey, x: 35, y: 45 },
+        { key: 'company2' as GraphNodeKey, x: 685, y: 45 },
+        { key: 'company3' as GraphNodeKey, x: 20, y: 500 },
+        { key: 'company4' as GraphNodeKey, x: 700, y: 500 },
+        { key: 'company5' as GraphNodeKey, x: 390, y: 610 },
+      ]
+      const position = positions[index]
+
+      return {
+        key: position.key,
+        title: `${targetPrefix}${index + 1}：${['李佳宁', '王子涵', '陈思远', '赵明轩', '刘若溪'][index]}`,
+        subtitle: targetSubtitle,
+        relation,
+        x: position.x,
+        y: position.y,
+        width: 360,
+        height: 88,
+        kind: 'company' as const,
+      }
+    }),
+  ]
 }
 
-const subfunctionOptions = ['专家论文合作关系构建'] as const
+function buildRadialGraph(
+  centerTitle: string,
+  centerSubtitle: string,
+  items: { title: string; subtitle: string; relation: string }[],
+): GraphNode[] {
+  const cx = graphWidth / 2
+  const cy = graphHeight / 2
+  const radius = 380
+  const n = items.length
+  return [
+    { key: 'expert', title: centerTitle, subtitle: centerSubtitle, x: cx - 150, y: cy - 47, width: 300, height: 94, kind: 'expert' },
+    ...items.map((item, i) => {
+      const ang = (2 * Math.PI * i) / (n || 1) - Math.PI / 2
+      const ccx = cx + radius * Math.cos(ang)
+      const ccy = cy + radius * Math.sin(ang)
+      return {
+        key: `company${i + 1}` as GraphNodeKey,
+        title: item.title,
+        subtitle: item.subtitle,
+        relation: item.relation,
+        x: ccx - 180,
+        y: ccy - 55,
+        width: 360,
+        height: 110,
+        kind: 'company' as const,
+      }
+    }),
+  ]
+}
 
-const dataSourceOptions: Array<{ label: string; value: DataSource }> = [
-  { label: '全部', value: 'all' },
-  { label: '知识图谱', value: 'knowledge_graph' },
-  { label: '知网', value: 'cnki' },
-  { label: '万方', value: 'wanfang' },
-  { label: 'Web of Science', value: 'web_of_science' },
+const relationFeatures: RelationFeature[] = [
+  {
+    navLabel: '科技专家直接关系',
+    subFunctions: [
+      {
+        featureName: '专家直接关系分析',
+        apiPath: '/api/v1/kg-construction/expert-direct-relations/analyze',
+        nodes: makeRelationGraph('专家A：张明远', '专家', '科技专家', ['论文合作', '项目合作', '同事', '校友', '共同专利']),
+      },
+      {
+        featureName: '直接关系图谱构建',
+        apiPath: '/api/v1/kg-construction/expert-direct-relations/build',
+        nodes: [],
+      },
+    ],
+  },
+  {
+    navLabel: '科技节点间接关系',
+    subFunctions: [
+      {
+        featureName: '科技节点间接关系构建',
+        apiPath: '/api/v1/tech-node/indirect-relation/build',
+        nodes: makeRelationGraph('节点A：人工智能', '节点', '科技节点', ['上位概念', '关联方向', '应用场景', '技术路径', '成果转化']),
+      },
+    ],
+  },
+  {
+    navLabel: '科技两点合作成果',
+    subFunctions: [
+      {
+        featureName: '科技两点合作成果构建',
+        apiPath: '/api/v1/tech-node/collaboration-result/build',
+        nodes: makeRelationGraph('节点A：人工智能', '成果', '合作成果', ['论文成果', '专利成果', '项目成果', '标准成果', '奖项成果']),
+      },
+    ],
+  },
+  {
+    navLabel: '科技专家同事关系',
+    subFunctions: [
+      {
+        featureName: '科技专家同事关系构建',
+        apiPath: '/api/v1/expert/colleague-relation/build',
+        nodes: makeRelationGraph('专家A：张明远', '专家', '科技专家', ['同单位', '同部门', '联合项目', '共同论文', '共同专利']),
+      },
+    ],
+  },
+  {
+    navLabel: '科技专家校友关系',
+    subFunctions: [
+      {
+        featureName: '科技专家校友关系构建',
+        apiPath: '/api/v1/expert/alumni-relation/build',
+        nodes: makeRelationGraph('专家A：张明远', '专家', '科技专家', ['本科校友', '硕士校友', '博士校友', '导师关系', '同实验室']),
+      },
+    ],
+  },
+  {
+    navLabel: '专家论文合作关系',
+    subFunctions: [
+      {
+        featureName: '专家论文合作关系分析',
+        apiPath: '/api/v1/kg-construction/expert-paper-cooperation-relations/analyze',
+        nodes: makeRelationGraph('专家A：张明远', '论文', '合作论文', ['第一作者', '通讯作者', '共同作者', '同主题', '引用关系']),
+      },
+      {
+        featureName: '论文合作图谱构建',
+        apiPath: '/api/v1/kg-construction/expert-paper-cooperation-relations/build',
+        nodes: [],
+      },
+    ],
+  },
+  {
+    navLabel: '重点科技企业关系',
+    subFunctions: [
+      {
+        featureName: '专家-企业关系构建',
+        apiPath: '/api/v1/kg-construction/expert-enterprise-relations/build',
+        nodes: [],
+      },
+      { featureName: '角色与合作详情标注', apiPath: '/api/v1/kg-construction/relation-detail-annotations/annotate', nodes: [] },
+      { featureName: '企业背景关联分析', apiPath: '/api/v1/kg-construction/enterprise-background-analyses/analyze', nodes: [] },
+    ],
+  },
+  {
+    navLabel: '产业链点事件关系',
+    subFunctions: [
+      {
+        featureName: '产业链点事件关系构建',
+        apiPath: '/api/v1/industry-chain/event-relation/build',
+        nodes: makeRelationGraph('链点A：核心零部件', '事件', '产业链事件', ['供应中断', '产能扩张', '政策影响', '技术替代', '价格波动']),
+      },
+    ],
+  },
+  {
+    navLabel: '科技产业链全景图',
+    subFunctions: [
+      {
+        featureName: '科技产业链全景图构建',
+        apiPath: '/api/v1/industry-chain/panorama/build',
+        nodes: makeRelationGraph('链点A：核心零部件', '链点', '产业链节点', ['上游供应', '中游制造', '下游应用', '关键企业', '风险事件']),
+      },
+    ],
+  },
 ]
 
-const apiExample = ref<StructuredResultOnlyResponse | null>(null)
+const currentFeature = computed(
+  () => relationFeatures.find((feature) => feature.navLabel === activeFeatureLabel.value) ?? relationFeatures[5],
+)
+const currentSubFunction = computed(
+  () =>
+    currentFeature.value.subFunctions.find((item) => item.featureName === activeSubFunctionName.value) ??
+    currentFeature.value.subFunctions[0],
+)
+const selectedFeature = computed(() => currentSubFunction.value.featureName)
+const featureOptions = computed(() => currentFeature.value.subFunctions.map((feature) => feature.featureName))
+const currentApiPath = computed(() => currentSubFunction.value.apiPath)
+const subFunctionKey = computed<'build' | 'annotate' | 'analyze' | 'paper_analyze' | 'direct_analyze'>(() => {
+  const n = activeSubFunctionName.value
+  if (n === '角色与合作详情标注') return 'annotate'
+  if (n === '企业背景关联分析') return 'analyze'
+  if (n === '专家论文合作关系分析') return 'paper_analyze'
+  if (n === '专家直接关系分析') return 'direct_analyze'
+  return 'build'
+})
+const graphNodes = ref<GraphNode[]>([])
+
 const loading = ref(false)
-const error = ref('')
-const activePage = ref<'test' | 'developer'>('test')
-const activeTab = ref<'structured' | 'api'>('structured')
-const developerCodeTab = ref<'python' | 'node' | 'curl'>('python')
-const copiedCodeTab = ref<'' | 'python' | 'node' | 'curl'>('')
-const lastTestTime = ref('2026-07-23 11:00:00')
-const showParamModal = ref(false)
-const showSchemeModal = ref(false)
-const appliedParams = ref<TestRequestPayload>({ ...defaultParams })
-const draftParams = ref<TestRequestPayload>({ ...defaultParams })
-const inferMenuExpanded = ref(true)
-const selectedSubfunction = ref<(typeof subfunctionOptions)[number]>('专家论文合作关系构建')
-const testSubfunctionOpen = ref(false)
-const developerSubfunctionOpen = ref(false)
-const previewViewportRef = ref<HTMLElement | null>(null)
-const previewNodes = ref<Record<NodeId, NodeLayout>>({ ...defaultNodeLayout })
-const draggingNodeId = ref<NodeId | null>(null)
-const dragOrigin = ref({ mouseX: 0, mouseY: 0, x: 0, y: 0 })
+const apiError = ref('')
+const buildResult = ref<any>(null)
 
-const result = computed(() => apiExample.value?.structuredResult)
-const authorA = computed(() => result.value?.authorList?.[0] || '张伟')
-const authorB = computed(() => result.value?.authorList?.[1] || '李明')
-const rawAuthorUnits = computed(() => (result.value?.authorUnits || []).filter(Boolean))
-const previewAuthorUnits = computed(() => {
-  const units = rawAuthorUnits.value
-  return [
-    units[0] || '清华大学',
-    units[1] || units[0] || '北京大学',
-  ]
+const activeError = computed(() => {
+  if (subFunctionKey.value === 'annotate') return annotationError.value
+  if (subFunctionKey.value === 'analyze') return analysisError.value
+  if (subFunctionKey.value === 'paper_analyze') return paperCoopError.value
+  if (subFunctionKey.value === 'direct_analyze') return directRelError.value
+  return apiError.value
 })
-const detailAuthorUnitsText = computed(() => rawAuthorUnits.value.join(' / ') || '清华大学 / 北京大学')
-const unitA = computed(() => previewAuthorUnits.value[0])
-const unitB = computed(() => previewAuthorUnits.value[1])
-const paperCount = computed(() => result.value?.cooperationPaperCount ?? 286)
-const previewTopics = computed(() => result.value?.paperTopics || ['社区发现', '学术图谱', '知识图谱', '合作网络'])
-const detailTopicsText = computed(() => (result.value?.paperTopics || ['社区发现', '学术图谱', '知识图谱', '合作网络']).join('、'))
-const period = computed(() => result.value?.cooperationTimeRange?.displayText || '2019 - 2026')
-const periodCompact = computed(() => period.value.replace(/\s*[-–—]\s*/g, '-'))
-const citation = computed(() => result.value?.citation || { total: 8420, max: 620 })
-const frequency = computed(() => result.value?.cooperationFrequency ?? 36)
-const impactScore = computed(() => result.value?.academicImpactScore ?? 87.5)
-const stableTeamMembers = computed(() => result.value?.stableTeamMembers || ['王志远', '孙明辉', '徐晨曦'])
-const coreCollaborators = computed(() => result.value?.coreCollaborators || ['王志远', '孙明辉', '徐晨曦'])
-const sharedContributionTags = computed(() => result.value?.sharedContribution || ['高水平合作论文', '高被引学术成果', '跨机构协同研究'])
-
-const journalSummary = computed(() => {
-  const journal = result.value?.journalLevelCount || { A类期刊: 132 }
-  const conference = result.value?.conferenceLevelCount || { A类会议: 52 }
-  const left = Object.entries(journal).map(([key, value]) => `${key}×${value}`).join(' / ')
-  const right = Object.entries(conference).map(([key, value]) => `${key}×${value}`).join(' / ')
-  return [left, right].filter(Boolean).join(' / ') || 'A类期刊132 / A类会议52'
+const activeLoading = computed(() => {
+  if (subFunctionKey.value === 'annotate') return annotationLoading.value
+  if (subFunctionKey.value === 'analyze') return analysisLoading.value
+  if (subFunctionKey.value === 'paper_analyze') return paperCoopLoading.value
+  if (subFunctionKey.value === 'direct_analyze') return directRelLoading.value
+  return loading.value
 })
 
-const cooperationMetrics = computed(() => [
-  journalSummary.value,
-  `总被引${citation.value.total}`,
-  `最高${citation.value.max}`,
-  `评分${impactScore.value}`,
-])
-const stableTeamMembersText = computed(() => stableTeamMembers.value.join('、'))
-const coreCollaboratorsText = computed(() => coreCollaborators.value.join('、'))
-
-const rows = computed(() => [
-  ['作者列表', `${authorA.value}、${authorB.value}`],
-  ['作者单位', detailAuthorUnitsText.value],
-  ['合作发表时间', period.value],
-  ['论文主题', detailTopicsText.value],
-  ['合作论文数量', `共同论文${paperCount.value}篇`],
-  ['期刊/会议级别', journalSummary.value],
-  ['论文被引情况', `总被引${citation.value.total} / 最高${citation.value.max}`],
-  ['合作频次', `${frequency.value}次`],
-  ['学术影响力', `核心贡献评分${impactScore.value}`],
-  ['稳定团队成员', stableTeamMembersText.value || '—'],
-  ['核心合作人员', coreCollaboratorsText.value || '—'],
-  ['共同贡献', sharedContributionTags.value.join('、') || '—'],
-])
-
-
-const developerRequestFields = [
-  { name: 'dataSource', type: 'string', required: '是', description: '数据来源：all、knowledge_graph、cnki、wanfang、web_of_science' },
-  { name: 'expertAId', type: 'string', required: '是', description: '专家A唯一标识' },
-  { name: 'expertBId', type: 'string', required: '是', description: '专家B唯一标识' },
-  { name: 'startTime', type: 'string', required: '否', description: '开始时间，格式 YYYY-MM-DD' },
-  { name: 'endTime', type: 'string', required: '否', description: '结束时间，格式 YYYY-MM-DD' },
-] as const
-
-const developerResponseFields = [
-  { name: 'structuredResult', type: 'object', description: '结构化结果根对象' },
-  { name: 'authorList', type: 'array', description: '作者列表' },
-  { name: 'authorUnits', type: 'array', description: '作者单位，按专家A/专家B顺序输出' },
-  { name: 'cooperationTimeRange', type: 'object', description: '合作发表时间范围' },
-  { name: 'paperTopics', type: 'array', description: '合作论文主题列表' },
-  { name: 'cooperationPaperCount', type: 'number', description: '合作论文数量' },
-  { name: 'journalLevelCount', type: 'object', description: '期刊级别统计' },
-  { name: 'conferenceLevelCount', type: 'object', description: '会议级别统计' },
-  { name: 'citation', type: 'object', description: '论文被引情况' },
-  { name: 'cooperationFrequency', type: 'number', description: '合作频次' },
-  { name: 'academicImpactScore', type: 'number', description: '学术影响力/核心贡献评分' },
-  { name: 'stableTeamName', type: 'string|null', description: '长期稳定合作团队名称' },
-  { name: 'stableTeamMembers', type: 'array', description: '长期稳定合作团队成员' },
-  { name: 'coreCollaborators', type: 'array', description: '核心合作人员' },
-  { name: 'sharedContribution', type: 'array', description: '共同贡献标签' },
-  { name: 'representativePapers', type: 'array', description: '代表性合作论文标题' },
-] as const
-
-const developerCodeExamples = {
-  python: `import json
-import requests
-
-url = "http://127.0.0.1:8881/api/v1/scholar-paper-cooperation/demo/structured-result"
-
-payload = {
-    "dataSource": "knowledge_graph",
-    "expertAId": "COOP-SCH001",
-    "expertBId": "COOP-SCH002",
-    "startTime": "2021-01-01",
-    "endTime": "2024-12-31"
-}
-
-headers = {"Content-Type": "application/json"}
-
-response = requests.post(url, json=payload, headers=headers, timeout=30)
-response.raise_for_status()
-
-result = response.json()
-structured_result = result.get("structuredResult", {})
-
-print(json.dumps(structured_result, ensure_ascii=False, indent=2))
-print("稳定团队成员：", structured_result.get("stableTeamMembers", []))
-print("核心合作人员：", structured_result.get("coreCollaborators", []))
-print("共同贡献：", structured_result.get("sharedContribution", []))`,
-  node: `const url = "http://127.0.0.1:8881/api/v1/scholar-paper-cooperation/demo/structured-result";
-
-const payload = {
-  dataSource: "knowledge_graph",
-  expertAId: "COOP-SCH001",
-  expertBId: "COOP-SCH002",
-  startTime: "2021-01-01",
-  endTime: "2024-12-31",
-};
-
-async function fetchStructuredResult() {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(\`HTTP \${response.status}\`);
-  }
-
-  const result = await response.json();
-  const structuredResult = result.structuredResult ?? {};
-
-  console.log(JSON.stringify(structuredResult, null, 2));
-  console.log("稳定团队成员：", structuredResult.stableTeamMembers ?? []);
-  console.log("核心合作人员：", structuredResult.coreCollaborators ?? []);
-  console.log("共同贡献：", structuredResult.sharedContribution ?? []);
-}
-
-fetchStructuredResult().catch(console.error);`,
-  curl: `curl --location "http://127.0.0.1:8881/api/v1/scholar-paper-cooperation/demo/structured-result" \\
-  --header "Content-Type: application/json" \\
-  --data '{
-    "dataSource": "knowledge_graph",
-    "expertAId": "COOP-SCH001",
-    "expertBId": "COOP-SCH002",
-    "startTime": "2021-01-01",
-    "endTime": "2024-12-31"
-  }'`,
-} as const
-
-const currentDeveloperCode = computed(() => developerCodeExamples[developerCodeTab.value])
-const currentDeveloperCodeLines = computed(() => currentDeveloperCode.value.split('\n'))
-
-async function copyDeveloperCode() {
-  try {
-    await navigator.clipboard.writeText(currentDeveloperCode.value)
-    copiedCodeTab.value = developerCodeTab.value
-    window.setTimeout(() => {
-      if (copiedCodeTab.value === developerCodeTab.value) {
-        copiedCodeTab.value = ''
-      }
-    }, 1600)
-  } catch {
-    const textarea = document.createElement('textarea')
-    textarea.value = currentDeveloperCode.value
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.focus()
-    textarea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textarea)
-    copiedCodeTab.value = developerCodeTab.value
-    window.setTimeout(() => {
-      if (copiedCodeTab.value === developerCodeTab.value) {
-        copiedCodeTab.value = ''
-      }
-    }, 1600)
-  }
-}
-
-function formatNow() {
-  return '2026-07-23 11:00:00'
-}
-
-function centerPoint(node: NodeLayout): Point {
-  return {
-    x: node.x + node.w / 2,
-    y: node.y + node.h / 2,
-  }
-}
-
-function clampPoint(point: Point): Point {
-  return {
-    x: Math.min(99.2, Math.max(0.8, point.x)),
-    y: Math.min(99.2, Math.max(0.8, point.y)),
-  }
-}
-
-function edgeAnchor(node: NodeLayout, target: Point): Point {
-  const origin = centerPoint(node)
-  const dx = target.x - origin.x
-  const dy = target.y - origin.y
-  if (dx === 0 && dy === 0) {
-    return origin
-  }
-  const halfW = node.w / 2
-  const halfH = node.h / 2
-  const scale = 1 / Math.max(Math.abs(dx) / halfW || 0, Math.abs(dy) / halfH || 0)
-  return clampPoint({
-    x: origin.x + dx * scale,
-    y: origin.y + dy * scale,
-  })
-}
-
-function linePath(start: Point, end: Point) {
-  const safeStart = clampPoint(start)
-  const safeEnd = clampPoint(end)
-  return `M ${safeStart.x} ${safeStart.y} L ${safeEnd.x} ${safeEnd.y}`
-}
-
-function curvePath(start: Point, end: Point, controlA: Point, controlB: Point) {
-  const safeStart = clampPoint(start)
-  const safeEnd = clampPoint(end)
-  const safeControlA = clampPoint(controlA)
-  const safeControlB = clampPoint(controlB)
-  return `M ${safeStart.x} ${safeStart.y} C ${safeControlA.x} ${safeControlA.y}, ${safeControlB.x} ${safeControlB.y}, ${safeEnd.x} ${safeEnd.y}`
-}
-
-function linkedCurve(start: Point, end: Point, startDepth: number, endDepth: number) {
-  const dx = end.x - start.x
-  return curvePath(
-    start,
-    end,
-    { x: start.x + dx * 0.22, y: start.y + startDepth },
-    { x: end.x - dx * 0.22, y: end.y - endDepth },
-  )
-}
-
-function midpoint(a: Point, b: Point, offsetX = 0, offsetY = 0): Point {
-  return {
-    x: (a.x + b.x) / 2 + offsetX,
-    y: (a.y + b.y) / 2 + offsetY,
-  }
-}
-
-function sidePoint(node: NodeLayout, side: 'top' | 'right' | 'bottom' | 'left', ratio = 0.5): Point {
-  if (side === 'top') {
-    return clampPoint({ x: node.x + node.w * ratio, y: node.y })
-  }
-  if (side === 'right') {
-    return clampPoint({ x: node.x + node.w, y: node.y + node.h * ratio })
-  }
-  if (side === 'bottom') {
-    return clampPoint({ x: node.x + node.w * ratio, y: node.y + node.h })
-  }
-  return clampPoint({ x: node.x, y: node.y + node.h * ratio })
-}
-
-function nodeStyle(id: NodeId) {
-  const node = previewNodes.value[id]
-  return {
-    left: `${node.x}%`,
-    top: `${node.y}%`,
-    width: `${node.w}%`,
-    height: `${node.h}%`,
-  }
-}
-
-const previewGraph = computed(() => {
-  const expertANode = previewNodes.value.expertA
-  const expertBNode = previewNodes.value.expertB
-  const paperNode = previewNodes.value.paper
-  const topicNode = previewNodes.value.topic
-  const periodNode = previewNodes.value.period
-  const contributionNode = previewNodes.value.contribution
-
-  const topStart = sidePoint(expertANode, 'right', 0.66)
-  const topEnd = sidePoint(expertBNode, 'left', 0.66)
-  const authorStart = sidePoint(expertANode, 'bottom', 0.62)
-  const authorEnd = sidePoint(paperNode, 'top', 0.32)
-  const frequencyStart = sidePoint(expertBNode, 'bottom', 0.38)
-  const frequencyEnd = sidePoint(paperNode, 'top', 0.74)
-  const topicStart = sidePoint(paperNode, 'left', 0.78)
-  const topicEnd = sidePoint(topicNode, 'top', 0.72)
-  const periodStart = sidePoint(paperNode, 'bottom', 0.5)
-  const periodEnd = sidePoint(periodNode, 'top', 0.5)
-  const contributionStart = sidePoint(paperNode, 'right', 0.74)
-  const contributionEnd = sidePoint(contributionNode, 'top', 0.22)
-
-  return {
-    topPath: linePath(topStart, topEnd),
-    authorPath: curvePath(
-      authorStart,
-      authorEnd,
-      { x: authorStart.x + 1.5, y: authorStart.y + 16 },
-      { x: authorEnd.x - 11, y: authorEnd.y + 6 },
-    ),
-    frequencyPath: curvePath(
-      frequencyStart,
-      frequencyEnd,
-      { x: frequencyStart.x - 1.5, y: frequencyStart.y + 16 },
-      { x: frequencyEnd.x + 11, y: frequencyEnd.y + 6 },
-    ),
-    topicPath: curvePath(
-      topicStart,
-      topicEnd,
-      { x: topicStart.x - 10, y: topicStart.y + 8 },
-      { x: topicEnd.x + 2, y: topicEnd.y + 8 },
-    ),
-    periodPath: linePath(periodStart, periodEnd),
-    contributionPath: curvePath(
-      contributionStart,
-      contributionEnd,
-      { x: contributionStart.x + 12, y: contributionStart.y + 4 },
-      { x: contributionEnd.x - 2, y: contributionEnd.y + 7 },
-    ),
-    relationPill: midpoint(topStart, topEnd, 0, -0.5),
-  }
+const graphAriaLabel = computed(() => {
+  if (subFunctionKey.value === 'annotate') return '角色标注图谱'
+  if (subFunctionKey.value === 'analyze') return '企业背景分析图谱'
+  return '企业关系图谱'
 })
 
-function clampNodePosition(id: NodeId, nextX: number, nextY: number) {
-  const node = previewNodes.value[id]
-  return {
-    x: Math.min(100 - node.w, Math.max(0, nextX)),
-    y: Math.min(100 - node.h, Math.max(0, nextY)),
-  }
-}
-
-function handleNodeMouseMove(event: MouseEvent) {
-  const nodeId = draggingNodeId.value
-  const viewport = previewViewportRef.value
-  if (!nodeId || !viewport) {
-    return
-  }
-  const deltaX = ((event.clientX - dragOrigin.value.mouseX) / viewport.clientWidth) * 100
-  const deltaY = ((event.clientY - dragOrigin.value.mouseY) / viewport.clientHeight) * 100
-  const next = clampNodePosition(nodeId, dragOrigin.value.x + deltaX, dragOrigin.value.y + deltaY)
-  previewNodes.value = {
-    ...previewNodes.value,
-    [nodeId]: {
-      ...previewNodes.value[nodeId],
-      ...next,
-    },
-  }
-}
-
-function stopNodeDrag() {
-  draggingNodeId.value = null
-  window.removeEventListener('mousemove', handleNodeMouseMove)
-  window.removeEventListener('mouseup', stopNodeDrag)
-}
-
-function startNodeDrag(id: NodeId, event: MouseEvent) {
-  if (event.button !== 0) {
-    return
-  }
-  const node = previewNodes.value[id]
-  draggingNodeId.value = id
-  dragOrigin.value = {
-    mouseX: event.clientX,
-    mouseY: event.clientY,
-    x: node.x,
-    y: node.y,
-  }
-  window.addEventListener('mousemove', handleNodeMouseMove)
-  window.addEventListener('mouseup', stopNodeDrag)
-}
-
-function openParamModal() {
-  draftParams.value = { ...appliedParams.value }
-  showParamModal.value = true
-}
-
-function toggleInferMenu() {
-  inferMenuExpanded.value = !inferMenuExpanded.value
-}
-
-function toggleTestSubfunction() {
-  testSubfunctionOpen.value = !testSubfunctionOpen.value
-  if (testSubfunctionOpen.value) {
-    developerSubfunctionOpen.value = false
-  }
-}
-
-function toggleDeveloperSubfunction() {
-  developerSubfunctionOpen.value = !developerSubfunctionOpen.value
-  if (developerSubfunctionOpen.value) {
-    testSubfunctionOpen.value = false
-  }
-}
-
-function selectSubfunction(option: (typeof subfunctionOptions)[number]) {
-  selectedSubfunction.value = option
-  testSubfunctionOpen.value = false
-  developerSubfunctionOpen.value = false
-}
-
-function closeSubfunctionDropdowns() {
-  testSubfunctionOpen.value = false
-  developerSubfunctionOpen.value = false
-}
-
-function closeParamModal() {
-  draftParams.value = { ...appliedParams.value }
-  showParamModal.value = false
-}
-
-function openSchemeModal() {
-  showSchemeModal.value = true
-}
-
-function closeSchemeModal() {
-  showSchemeModal.value = false
-}
-
-async function runTest(payload: TestRequestPayload = appliedParams.value) {
+async function loadEnterpriseRelation() {
+  if (currentSubFunction.value.featureName !== '专家-企业关系构建') return
   loading.value = true
-  error.value = ''
+  apiError.value = ''
   try {
-    const response = await fetch('/api/v1/scholar-paper-cooperation/demo/structured-result', {
+    const resp = await fetch(currentApiPath.value, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        scholarId: params.value.scholarId,
+        enterpriseId: params.value.enterpriseId,
+        relationTypes: params.value.relationTypes,
+      }),
     })
-    if (!response.ok) {
-      const body = await response.json().catch(() => null)
-      throw new Error(body?.detail || `接口请求失败：${response.status}`)
-    }
-    apiExample.value = await response.json()
-    appliedParams.value = { ...payload }
-    previewNodes.value = { ...defaultNodeLayout }
-    lastTestTime.value = formatNow()
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : '测试数据加载失败'
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const data = await resp.json()
+    buildResult.value = data
+    // 画板：以人才为中心，企业均匀环绕
+    const rels: any[] = Array.isArray(data.relations) ? data.relations : []
+    const cx = graphWidth / 2
+    const cy = graphHeight / 2
+    const radius = 380
+    const n = rels.length
+    graphNodes.value = [
+      { key: 'expert', title: `专家：${data.scholarName ?? params.value.scholarId}`, subtitle: '专家', x: cx - 150, y: cy - 47, width: 300, height: 94, kind: 'expert' },
+      ...rels.map((r: any, i: number) => {
+        const ang = (2 * Math.PI * i) / (n || 1) - Math.PI / 2
+        const ccx = cx + radius * Math.cos(ang)
+        const ccy = cy + radius * Math.sin(ang)
+        return {
+          key: `company${i + 1}` as GraphNodeKey,
+          title: `企业：${r.enterpriseName ?? r.enterpriseId}`,
+          subtitle: '企业',
+          relation: r.relationType || '-',
+          x: ccx - 180, y: ccy - 55, width: 360, height: 110, kind: 'company' as const,
+        }
+      }),
+    ]
+  } catch (e: any) {
+    apiError.value = e.message || String(e)
   } finally {
     loading.value = false
   }
 }
 
-async function saveAndRun() {
-  const payload = { ...draftParams.value }
-  if (!payload.dataSource || !payload.expertAId.trim() || !payload.expertBId.trim()) {
-    error.value = '请填写 dataSource、expertAId 和 expertBId'
-    return
+const companyNodes = computed(() => graphNodes.value.filter((node) => node.kind === 'company'))
+const centerNode = computed(() => graphNodes.value.find((node) => node.kind === 'expert') ?? graphNodes.value[0])
+
+function splitNodeTitle(title: string) {
+  const [label, ...nameParts] = title.split('：')
+  return {
+    label: label || '节点',
+    name: nameParts.join('：') || title,
   }
-  if (payload.expertAId.trim() === payload.expertBId.trim()) {
-    error.value = 'expertAId 和 expertBId 不能相同'
-    return
-  }
-  showParamModal.value = false
-  await runTest(payload)
 }
 
-onMounted(() => {
-  document.addEventListener('click', closeSubfunctionDropdowns)
-  void runTest()
+const dimensionChinese: Record<string, string> = {
+  industry_status: '行业地位',
+  core_tech: '核心技术',
+  financial: '经营财务',
+}
+
+const detailRows = computed<(string | number)[][]>(() => {
+  if (subFunctionKey.value === 'annotate') {
+    const resp = annotationResp.value
+    if (!resp) return []
+    const period = resp.period ?? annotationParams.value.period
+    return [
+      ['关系ID', resp.relationId ?? annotationParams.value.relationId],
+      ['角色', resp.roleLabel ?? '-'],
+      ['角色等级', resp.roleLevel ?? '-'],
+      ['角色类型', resp.roleType ?? annotationParams.value.roleType],
+      ['技术领域', resp.techField ?? annotationParams.value.techField],
+      ['周期', `${period?.start ?? ''} ~ ${period?.end ?? ''}`],
+      ['标注结果', resp.annotated ? '成功' : '失败'],
+    ]
+  }
+  if (subFunctionKey.value === 'analyze') {
+    const resp = analysisResp.value
+    if (!resp) return []
+    const rows: (string | number)[][] = [['企业名称', resp.enterpriseName ?? '-']]
+    const dims = resp.dimensions ?? {}
+    Object.keys(dims).forEach((key) => {
+      const d = dims[key]
+      const label = dimensionChinese[key] ?? key
+      const value = d?.available ? d.conclusion ?? '-' : d?.summary ?? '-'
+      rows.push([label, value])
+    })
+    rows.push(['核心技术布局', resp.coreTechLayout ?? '-'])
+    const dist = Array.isArray(resp.patentDistribution) ? resp.patentDistribution : []
+    dist.forEach((p: any) => {
+      rows.push([`CPC:${p.cpcSection ?? '-'}`, p.count ?? 0])
+    })
+    return rows
+  }
+  if (subFunctionKey.value === 'paper_analyze') {
+    const resp = paperCoopResp.value
+    if (!resp) return []
+    const sr = resp.structuredResult ?? {}
+    return [
+      ['专家A', sr.authorList?.[0] ?? '-'],
+      ['专家B', sr.authorList?.[1] ?? '-'],
+      ['单位A', sr.authorUnits?.[0] ?? '-'],
+      ['单位B', sr.authorUnits?.[1] ?? '-'],
+      ['合作论文数', sr.cooperationPaperCount ?? 0],
+      ['合作频次', sr.cooperationFrequency ?? 0],
+      ['学术影响力', sr.academicImpactScore ?? 0],
+      ['合作时段', sr.cooperationTimeRange?.displayText ?? '-'],
+      ['研究主题', (sr.paperTopics ?? []).join('、') || '-'],
+      ['共同贡献', (sr.sharedContribution ?? []).join('、') || '-'],
+      ['代表论文', (sr.representativePapers ?? []).slice(0, 3).join('、') || '-'],
+    ]
+  }
+  if (subFunctionKey.value === 'direct_analyze') {
+    const resp = directRelResp.value
+    if (!resp) return []
+    const rel = resp.relation ?? {}
+    return [
+      ['专家A', resp.expertA?.name ?? '-'],
+      ['专家B', resp.expertB?.name ?? '-'],
+      ['单位A', resp.expertA?.organization ?? '-'],
+      ['单位B', resp.expertB?.organization ?? '-'],
+      ['关系依据', (rel.reasons ?? []).join('、') || '无'],
+      ['关系强度', rel.relationStrength ?? 0],
+      ['共同机构', rel.institution || '-'],
+      ['共同方向', (rel.directions ?? []).join('、') || '-'],
+    ]
+  }
+  const center = centerNode.value
+  if (!center) return []
+  const centerInfo = splitNodeTitle(center.title)
+  const rows: (string | number)[][] = [
+    [centerInfo.label, centerInfo.name],
+    [`${centerInfo.label}类型`, center.subtitle],
+  ]
+
+  companyNodes.value.forEach((node) => {
+    const targetInfo = splitNodeTitle(node.title)
+    rows.push([targetInfo.label, targetInfo.name])
+    rows.push(['关系类型', node.relation ?? '-'])
+  })
+
+  return rows
 })
 
-onBeforeUnmount(() => {
-  stopNodeDrag()
-  document.removeEventListener('click', closeSubfunctionDropdowns)
+const apiExample = computed(() => {
+  if (subFunctionKey.value === 'annotate') {
+    return JSON.stringify(
+      annotationResp.value ?? {
+        status: 'success',
+        relationId: annotationParams.value.relationId,
+        roleType: annotationParams.value.roleType,
+        roleLabel: '',
+        roleLevel: '',
+        techField: annotationParams.value.techField,
+        period: annotationParams.value.period,
+        annotated: false,
+      },
+      null,
+      2,
+    )
+  }
+  if (subFunctionKey.value === 'analyze') {
+    return JSON.stringify(
+      analysisResp.value ?? {
+        status: 'success',
+        enterpriseId: analysisParams.value.enterpriseId,
+        enterpriseName: '',
+        dimensions: {},
+        patentDistribution: [],
+        coreTechLayout: '',
+      },
+      null,
+      2,
+    )
+  }
+  return JSON.stringify(
+    buildResult.value ?? {
+      status: 'success',
+      scholarId: params.value.scholarId,
+      scholarName: '',
+      builtRelationId: `${params.value.scholarId}->${params.value.enterpriseId}@0`,
+      relationTypes: params.value.relationTypes,
+      effective: true,
+      relations: [],
+    },
+    null,
+    2,
+  )
 })
+
+const params = ref({
+  scholarId: 'E10001',
+  enterpriseId: 'ENT001',
+  relationTypes: ['employment'] as string[],
+})
+
+const relationTypeOptions = [
+  { value: 'employment', label: '任职' },
+  { value: 'advisor', label: '顾问' },
+  { value: 'rd_cooperation', label: '研发合作' },
+  { value: 'project_cooperation', label: '项目合作' },
+  { value: 'tech_cooperation', label: '技术合作' },
+]
+
+const requestRows = computed<(string)[][]>(() => {
+  if (subFunctionKey.value === 'annotate') {
+    return [
+      ['relationId', 'string', '是', '政企关系ID'],
+      ['roleType', 'string', '是', '角色类型'],
+      ['techField', 'string', '否', '技术领域'],
+      ['period.start', 'string', '否', '开始日期'],
+      ['period.end', 'string', '否', '结束日期'],
+    ]
+  }
+  if (subFunctionKey.value === 'analyze') {
+    return [
+      ['enterpriseId', 'string', '是', '企业ID'],
+      ['analysisDimensions', 'string[]', '是', '分析维度'],
+      ['patentCPC', 'string[]', '否', '专利CPC分类号'],
+    ]
+  }
+  return [
+    ['scholarId', 'string', '是', '专家ID'],
+    ['enterpriseId', 'string', '是', '企业ID'],
+    ['relationTypes', 'string[]', '是', '关联关系类型（多选，英文编码）'],
+  ]
+})
+
+const responseRows = computed<(string)[][]>(() => {
+  if (subFunctionKey.value === 'annotate') {
+    return [
+      ['status', 'string', '状态'],
+      ['relationId', 'string', '政企关系ID'],
+      ['roleType', 'string', '角色类型'],
+      ['roleLabel', 'string', '角色标签'],
+      ['roleLevel', 'string', '角色等级'],
+      ['techField', 'string', '技术领域'],
+      ['period', 'object', '合作时段'],
+      ['annotated', 'boolean', '标注结果'],
+    ]
+  }
+  if (subFunctionKey.value === 'analyze') {
+    return [
+      ['status', 'string', '状态'],
+      ['enterpriseId', 'string', '企业ID'],
+      ['enterpriseName', 'string', '企业名称'],
+      ['dimensions', 'object', '各维度分析'],
+      ['dimensions[].available', 'boolean', '维度是否有数据'],
+      ['dimensions[].conclusion', 'string', '维度结论'],
+      ['dimensions[].summary', 'string', '降级摘要'],
+      ['patentDistribution', 'array', '专利分布'],
+      ['patentDistribution[].cpcSection', 'string', 'CPC部类'],
+      ['patentDistribution[].count', 'int', '专利数'],
+      ['coreTechLayout', 'string', '核心技术布局'],
+    ]
+  }
+  return [
+    ['status', 'string', '状态'],
+    ['scholarId', 'string', '专家ID'],
+    ['scholarName', 'string', '专家姓名'],
+    ['builtRelationId', 'string', '构建的关系ID'],
+    ['relationType', 'string', '关系类型标签'],
+    ['effective', 'boolean', '生效标识'],
+    ['relations', 'array', '该人才全部企业关系'],
+    ['relations[].relationId', 'string', '关系ID'],
+    ['relations[].enterpriseId', 'string', '企业ID'],
+    ['relations[].enterpriseName', 'string', '企业名称'],
+    ['relations[].relationType', 'string', '关系类型标签'],
+  ]
+})
+
+// #2 角色与合作详情标注
+const annotationParams = ref({
+  relationId: 'E10001->ENT001@0',
+  roleType: 'chief_scientist',
+  techField: '人工智能',
+  period: { start: '2021-01-01', end: '2024-12-31' },
+})
+const roleOptions = [
+  { value: 'chief_scientist', label: '首席科学家' },
+  { value: 'cto', label: '技术总监' },
+  { value: 'technical_advisor', label: '技术顾问' },
+  { value: 'rd_lead', label: '研发负责人' },
+  { value: 'engineer', label: '工程师' },
+]
+const annotationResp = ref<any>(null)
+const annotationError = ref('')
+const annotationLoading = ref(false)
+
+async function loadAnnotation() {
+  annotationLoading.value = true
+  annotationError.value = ''
+  try {
+    const { data } = await axios.post(
+      '/api/v1/kg-construction/relation-detail-annotations/annotate',
+      annotationParams.value,
+    )
+    annotationResp.value = data
+    // 画板：专家 -> 企业，边上标注角色
+    const parts = String(annotationParams.value.relationId || '').split('->')
+    const src = parts[0] || ''
+    const dst = (parts[1] || '').split('@')[0] || ''
+    graphNodes.value = buildRadialGraph(`专家：${src}`, '专家', [
+      {
+        title: `企业：${dst}`,
+        subtitle: data.techField || '企业',
+        relation: data.roleLabel || data.roleType || '标注',
+      },
+    ])
+  } catch (e: any) {
+    annotationError.value = e?.response?.data?.detail || e?.message || String(e)
+    graphNodes.value = []
+  } finally {
+    annotationLoading.value = false
+  }
+}
+
+// #3 企业背景关联分析
+const analysisParams = ref({
+  enterpriseId: 'ENT001',
+  analysisDimensions: ['industry_status', 'core_tech', 'financial'] as string[],
+  patentCPC: ['G06N', 'G06F'] as string[],
+})
+const dimensionOptions = [
+  { value: 'industry_status', label: '行业地位' },
+  { value: 'core_tech', label: '核心技术' },
+  { value: 'financial', label: '经营财务' },
+]
+const analysisResp = ref<any>(null)
+const analysisError = ref('')
+const analysisLoading = ref(false)
+
+async function loadAnalysis() {
+  analysisLoading.value = true
+  analysisError.value = ''
+  try {
+    const { data } = await axios.post(
+      '/api/v1/kg-construction/enterprise-background-analyses/analyze',
+      {
+        enterpriseId: analysisParams.value.enterpriseId,
+        analysisDimensions: analysisParams.value.analysisDimensions,
+        patentCPC: analysisParams.value.patentCPC,
+      },
+    )
+    analysisResp.value = data
+    // 画板：企业为中心，分析维度辐射
+    const dimLabel: Record<string, string> = {
+      industry_status: '行业地位',
+      core_tech: '核心技术',
+      financial: '经营财务',
+    }
+    const items = analysisParams.value.analysisDimensions.map((d) => {
+      const dd = data.dimensions?.[d] || {}
+      return {
+        title: dimLabel[d] || d,
+        subtitle: dd.available ? dd.conclusion || '已分析' : dd.summary || '暂无数据',
+        relation: dd.available ? '已分析' : '暂无数据',
+      }
+    })
+    graphNodes.value = buildRadialGraph(
+      `企业：${data.enterpriseName || analysisParams.value.enterpriseId}`,
+      '企业',
+      items,
+    )
+  } catch (e: any) {
+    analysisError.value = e?.response?.data?.detail || e?.message || String(e)
+    graphNodes.value = []
+  } finally {
+    analysisLoading.value = false
+  }
+}
+
+// #4 论文合作关系分析
+const paperCoopParams = ref({
+  expertAId: '',
+  expertBId: '',
+  startTime: '',
+  endTime: '',
+})
+const paperCoopResp = ref<any>(null)
+const paperCoopError = ref('')
+const paperCoopLoading = ref(false)
+
+async function loadPaperCooperation() {
+  paperCoopLoading.value = true
+  paperCoopError.value = ''
+  try {
+    const { data } = await axios.post(
+      '/api/v1/kg-construction/expert-paper-cooperation-relations/analyze',
+      {
+        dataSource: 'knowledge_graph',
+        expertAId: paperCoopParams.value.expertAId,
+        expertBId: paperCoopParams.value.expertBId,
+        startTime: paperCoopParams.value.startTime || null,
+        endTime: paperCoopParams.value.endTime || null,
+      },
+    )
+    paperCoopResp.value = data
+    // 画板：两专家 + 合作论文 + 主题
+    const nodes = (data.graphNodes || []) as any[]
+    if (nodes.length) {
+      graphNodes.value = nodes.map((n: any, i: number) => ({
+        key: i === 0 ? 'expert' : `company${i}`,
+        title: n.label || '',
+        subtitle: n.subtitle || '',
+        relation: '',
+        x: n.x || 200 + i * 250,
+        y: n.y || 200,
+        width: 300,
+        height: 94,
+        kind: i < 2 ? ('expert' as const) : ('company' as const),
+      }))
+    } else {
+      graphNodes.value = buildRadialGraph(
+        `专家A：${data.expertA?.name || paperCoopParams.value.expertAId}`,
+        '专家',
+        [
+          { title: `专家B：${data.expertB?.name || ''}`, subtitle: data.expertB?.organization || '', relation: `合作${data.structuredResult?.cooperationPaperCount || 0}篇` },
+        ],
+      )
+    }
+  } catch (e: any) {
+    paperCoopError.value = e?.response?.data?.detail || e?.message || String(e)
+    graphNodes.value = []
+  } finally {
+    paperCoopLoading.value = false
+  }
+}
+
+// #5 专家直接关系分析
+const directRelParams = ref({
+  expertAId: '',
+  expertBId: '',
+})
+const directRelResp = ref<any>(null)
+const directRelError = ref('')
+const directRelLoading = ref(false)
+
+async function loadDirectRelation() {
+  directRelLoading.value = true
+  directRelError.value = ''
+  try {
+    const { data } = await axios.post(
+      '/api/v1/kg-construction/expert-direct-relations/analyze',
+      {
+        expertAId: directRelParams.value.expertAId,
+        expertBId: directRelParams.value.expertBId,
+      },
+    )
+    directRelResp.value = data
+    const nodes = (data.graphNodes || []) as any[]
+    if (nodes.length) {
+      graphNodes.value = nodes.map((n: any, i: number) => ({
+        key: i === 0 ? 'expert' : `company${i}`,
+        title: n.label || '',
+        subtitle: n.subtitle || '',
+        relation: '',
+        x: n.x || 200 + i * 250,
+        y: n.y || 300,
+        width: 300,
+        height: 94,
+        kind: n.type === 'expert' ? ('expert' as const) : ('company' as const),
+      }))
+    } else {
+      const rel = data.relation || {}
+      graphNodes.value = buildRadialGraph(
+        `专家A：${data.expertA?.name || directRelParams.value.expertAId}`,
+        '专家',
+        [
+          {
+            title: `专家B：${data.expertB?.name || ''}`,
+            subtitle: data.expertB?.organization || '',
+            relation: (rel.reasons || []).join('/') || '直接关系',
+          },
+        ],
+      )
+    }
+  } catch (e: any) {
+    directRelError.value = e?.response?.data?.detail || e?.message || String(e)
+    graphNodes.value = []
+  } finally {
+    directRelLoading.value = false
+  }
+}
+
+// 测试参数下拉选项（后端动态拉取）
+interface OptionItem {
+  value: string
+  label: string
+}
+const optionsData = ref<{
+  scholars: { scholarId: string; name: string }[]
+  enterprises: { enterpriseId: string; name: string }[]
+  edges: { relationId: string; scholarId: string; enterpriseId: string }[]
+  relationTypes: OptionItem[]
+  roles: OptionItem[]
+  dimensions: OptionItem[]
+  techFields: string[]
+  cpcCodes: string[]
+}>({
+  scholars: [],
+  enterprises: [],
+  edges: [],
+  relationTypes: [],
+  roles: [],
+  dimensions: [],
+  techFields: [],
+  cpcCodes: [],
+})
+
+onMounted(async () => {
+  try {
+    const { data } = await axios.get('/api/v1/kg-construction/options')
+    optionsData.value = data
+  } catch (e) {
+    // 拉取失败时回退到本地静态选项
+  }
+})
+
+const scholarOptions = computed(() => optionsData.value.scholars)
+const enterpriseOptions = computed(() => optionsData.value.enterprises)
+const edgeOptions = computed(() => optionsData.value.edges)
+const relationTypeOpts = computed(() =>
+  optionsData.value.relationTypes.length ? optionsData.value.relationTypes : relationTypeOptions,
+)
+const roleOpts = computed(() =>
+  optionsData.value.roles.length ? optionsData.value.roles : roleOptions,
+)
+const dimensionOpts = computed(() =>
+  optionsData.value.dimensions.length ? optionsData.value.dimensions : dimensionOptions,
+)
+const techFieldOpts = computed(() => optionsData.value.techFields)
+const cpcOpts = computed(() => optionsData.value.cpcCodes)
+
+type MultiKey = 'relationTypes' | 'analysisDimensions' | 'patentCPC'
+function multiArr(key: MultiKey): string[] {
+  if (key === 'relationTypes') return params.value.relationTypes
+  if (key === 'analysisDimensions') return analysisParams.value.analysisDimensions
+  return analysisParams.value.patentCPC
+}
+function pushMulti(key: MultiKey, value: string) {
+  if (!value) return
+  const arr = multiArr(key)
+  if (!arr.includes(value)) arr.push(value)
+}
+function removeMulti(key: MultiKey, value: string) {
+  const arr = multiArr(key)
+  const i = arr.indexOf(value)
+  if (i >= 0) arr.splice(i, 1)
+}
+function selectedItems(selected: string[], opts: OptionItem[]) {
+  return opts.filter((o) => selected.includes(o.value))
+}
+
+const pythonCodeExample = computed(() => {
+  const url = `http://localhost:3001${currentApiPath.value}`
+  if (subFunctionKey.value === 'annotate') {
+    return `import requests
+
+url = "${url}"
+payload = {
+    "relationId": "${annotationParams.value.relationId}",
+    "roleType": "${annotationParams.value.roleType}",
+    "techField": "${annotationParams.value.techField}",
+    "period": {
+        "start": "${annotationParams.value.period.start}",
+        "end": "${annotationParams.value.period.end}"
+    }
+}
+
+response = requests.post(url, json=payload)
+print(response.json())`
+  }
+  if (subFunctionKey.value === 'analyze') {
+    const cpc = analysisParams.value.patentCPC
+    return `import requests
+
+url = "${url}"
+payload = {
+    "enterpriseId": "${analysisParams.value.enterpriseId}",
+    "analysisDimensions": ${JSON.stringify(analysisParams.value.analysisDimensions)},
+    "patentCPC": ${JSON.stringify(cpc)}
+}
+
+response = requests.post(url, json=payload)
+print(response.json())`
+  }
+  return `import requests
+
+url = "${url}"
+payload = {
+    "scholarId": "${params.value.scholarId}",
+    "enterpriseId": "${params.value.enterpriseId}",
+    "relationTypes": ${JSON.stringify(params.value.relationTypes)}
+}
+
+response = requests.post(url, json=payload)
+print(response.json())`
+})
+
+const nodeCodeExample = computed(() => {
+  const url = `http://localhost:3001${currentApiPath.value}`
+  if (subFunctionKey.value === 'annotate') {
+    return `const response = await fetch("${url}", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    relationId: "${annotationParams.value.relationId}",
+    roleType: "${annotationParams.value.roleType}",
+    techField: "${annotationParams.value.techField}",
+    period: {
+      start: "${annotationParams.value.period.start}",
+      end: "${annotationParams.value.period.end}"
+    }
+  })
+})
+
+const data = await response.json()
+console.log(data)`
+  }
+  if (subFunctionKey.value === 'analyze') {
+    const cpc = analysisParams.value.patentCPC
+    return `const response = await fetch("${url}", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    enterpriseId: "${analysisParams.value.enterpriseId}",
+    analysisDimensions: ${JSON.stringify(analysisParams.value.analysisDimensions)},
+    patentCPC: ${JSON.stringify(cpc)}
+  })
+})
+
+const data = await response.json()
+console.log(data)`
+  }
+  return `const response = await fetch("${url}", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    scholarId: "${params.value.scholarId}",
+    enterpriseId: "${params.value.enterpriseId}",
+    relationTypes: ${JSON.stringify(params.value.relationTypes)}
+  })
+})
+
+const data = await response.json()
+console.log(data)`
+})
+
+const curlCodeExample = computed(() => {
+  const url = `http://localhost:3001${currentApiPath.value}`
+  if (subFunctionKey.value === 'annotate') {
+    return `curl -X POST "${url}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "relationId": "${annotationParams.value.relationId}",
+    "roleType": "${annotationParams.value.roleType}",
+    "techField": "${annotationParams.value.techField}",
+    "period": {
+      "start": "${annotationParams.value.period.start}",
+      "end": "${annotationParams.value.period.end}"
+    }
+  }'`
+  }
+  if (subFunctionKey.value === 'analyze') {
+    const cpc = analysisParams.value.patentCPC
+    return `curl -X POST "${url}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "enterpriseId": "${analysisParams.value.enterpriseId}",
+    "analysisDimensions": ${JSON.stringify(analysisParams.value.analysisDimensions)},
+    "patentCPC": ${JSON.stringify(cpc)}
+  }'`
+  }
+  return `curl -X POST "${url}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "scholarId": "${params.value.scholarId}",
+    "enterpriseId": "${params.value.enterpriseId}",
+    "relationTypes": ${JSON.stringify(params.value.relationTypes)}
+  }'`
+})
+
+const codeExample = computed(() => {
+  if (activeCodeTab.value === 'Node.js') return nodeCodeExample.value
+  if (activeCodeTab.value === 'cURL') return curlCodeExample.value
+  return pythonCodeExample.value
+})
+
+const pythonCodeLines = computed(() => [
+  [{ text: 'import requests', tone: 'keyword' }],
+  [],
+  [
+    { text: 'url', tone: 'plain' },
+    { text: ' = ', tone: 'muted' },
+    { text: `"http://localhost:3001${currentApiPath.value}"`, tone: 'soft' },
+  ],
+  [
+    { text: 'payload', tone: 'plain' },
+    { text: ' = ', tone: 'muted' },
+    { text: '{', tone: 'plain' },
+  ],
+  [
+    { text: '  "scholarId"', tone: 'string' },
+    { text: ': ', tone: 'muted' },
+    { text: `"${params.value.scholarId}"`, tone: 'string' },
+    { text: ',', tone: 'plain' },
+  ],
+  [
+    { text: '  "enterpriseId"', tone: 'string' },
+    { text: ': ', tone: 'muted' },
+    { text: `"${params.value.enterpriseId}"`, tone: 'string' },
+    { text: ',', tone: 'plain' },
+  ],
+  [
+    { text: '  "relationTypes"', tone: 'string' },
+    { text: ': ', tone: 'muted' },
+    { text: `${JSON.stringify(params.value.relationTypes)}`, tone: 'string' },
+  ],
+  [{ text: '}', tone: 'plain' }],
+  [],
+  [
+    { text: 'response', tone: 'keyword' },
+    { text: ' = ', tone: 'muted' },
+    { text: 'requests.post', tone: 'keyword' },
+    { text: '(url, json=payload)', tone: 'plain' },
+  ],
+  [
+    { text: 'print', tone: 'keyword' },
+    { text: '(response.json())', tone: 'plain' },
+  ],
+])
+
+const renderedCodeLines = computed(() =>
+  subFunctionKey.value === 'build' && activeCodeTab.value === 'Python' ? pythonCodeLines.value : null,
+)
+
+const flowSteps = [
+  ['input', '输入数据', '接收专家ID、企业ID、专家企业关系的测试参数'],
+  ['standardize', '标准化处理', '汇聚专家画像、企业标签、成果与合作记录等图谱数据'],
+  ['reasoning', '关系推理', '基于任职、合作与企业标签规则，推理专家-企业关系'],
+  ['output', '结果输出', '输出专家信息、企业关系列表和执行状态等结构化结果'],
+]
+
+function dispatchLoader() {
+  const key = subFunctionKey.value
+  if (key === 'annotate') loadAnnotation()
+  else if (key === 'analyze') loadAnalysis()
+  else if (key === 'paper_analyze') loadPaperCooperation()
+  else if (key === 'direct_analyze') loadDirectRelation()
+  else loadEnterpriseRelation()
+}
+
+function runTest() {
+  dispatchLoader()
+  resultTab.value = 'structured'
+}
+
+function saveParamsAndRun() {
+  showParams.value = false
+  dispatchLoader()
+}
+
+function cloneNodes(nodes: GraphNode[]) {
+  return nodes.map((node) => ({ ...node }))
+}
+
+function selectFeatureByNav(navLabel: string) {
+  const feature = relationFeatures.find((item) => item.navLabel === navLabel)
+  if (!feature) return
+  const firstSubFunction = feature.subFunctions[0]
+
+  activeFeatureLabel.value = feature.navLabel
+  activeSubFunctionName.value = firstSubFunction.featureName
+  graphNodes.value = cloneNodes(firstSubFunction.nodes)
+  resultTab.value = 'structured'
+  showFeatureMenu.value = false
+}
+
+function selectFeatureByName(featureName: string) {
+  const subFunction = currentFeature.value.subFunctions.find((item) => item.featureName === featureName)
+  if (!subFunction) return
+
+  activeSubFunctionName.value = subFunction.featureName
+  graphNodes.value = cloneNodes(subFunction.nodes)
+  buildResult.value = null
+  annotationResp.value = null
+  analysisResp.value = null
+  resultTab.value = 'structured'
+  showFeatureMenu.value = false
+}
+
+function getNode(key: GraphNodeKey) {
+  return graphNodes.value.find((node) => node.key === key)
+}
+
+function nodeStyle(node: GraphNode) {
+  return {
+    left: `${node.x}px`,
+    top: `${node.y}px`,
+    width: `${node.width}px`,
+    height: `${node.height}px`,
+    zIndex: activeDrag.value?.key === node.key ? 6 : 2,
+  }
+}
+
+const graphStageStyle = computed(() => ({
+  width: `${graphWidth}px`,
+  height: `${graphHeight}px`,
+  transform: `translate(-50%, -50%) scale(${graphZoom.value})`,
+}))
+
+function nodeCenter(node: GraphNode) {
+  return {
+    x: node.x + node.width / 2,
+    y: node.y + node.height / 2,
+  }
+}
+
+function boundaryPoint(node: GraphNode, toward: { x: number; y: number }) {
+  const center = nodeCenter(node)
+  const dx = toward.x - center.x
+  const dy = toward.y - center.y
+  const halfWidth = node.width / 2
+  const halfHeight = node.height / 2
+
+  if (dx === 0 && dy === 0) return center
+
+  const scaleX = dx === 0 ? Number.POSITIVE_INFINITY : halfWidth / Math.abs(dx)
+  const scaleY = dy === 0 ? Number.POSITIVE_INFINITY : halfHeight / Math.abs(dy)
+  const scale = Math.min(scaleX, scaleY)
+
+  return {
+    x: center.x + dx * scale,
+    y: center.y + dy * scale,
+  }
+}
+
+function relationPath(node: GraphNode) {
+  const expert = getNode('expert')
+  if (!expert) return ''
+
+  const from = nodeCenter(expert)
+  const to = nodeCenter(node)
+  const start = boundaryPoint(expert, to)
+  const end = boundaryPoint(node, from)
+  const verticalGap = Math.abs(end.y - start.y)
+  const control = {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2 + (end.y < start.y ? -verticalGap * 0.42 : verticalGap * 0.18),
+  }
+
+  return `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`
+}
+
+function relationLabelStyle(node: GraphNode) {
+  const expert = getNode('expert')
+  if (!expert) return {}
+
+  const from = nodeCenter(expert)
+  const to = nodeCenter(node)
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const length = Math.hypot(dx, dy) || 1
+  const normal = {
+    x: (-dy / length) * 28,
+    y: (dx / length) * 28,
+  }
+  const directionOffset = to.y < from.y ? -12 : 12
+
+  return {
+    left: `${(from.x + to.x) / 2 + normal.x - 34}px`,
+    top: `${(from.y + to.y) / 2 + normal.y + directionOffset - 18}px`,
+  }
+}
+
+function relationTone(relation = '') {
+  if (relation === '任职') return 'relation-blue'
+  if (relation === '顾问') return 'relation-purple'
+  return 'relation-orange'
+}
+
+function relationMarker(relation = '') {
+  if (relation === '任职') return 'url(#arrow-blue)'
+  if (relation === '顾问') return 'url(#arrow-purple)'
+  return 'url(#arrow-orange)'
+}
+
+function startDrag(event: PointerEvent, node: GraphNode) {
+  const stage = graphStageRef.value
+  if (!stage) return
+
+  const rect = stage.getBoundingClientRect()
+  const scaleX = graphWidth / rect.width
+  const scaleY = graphHeight / rect.height
+  activeDrag.value = {
+    key: node.key,
+    offsetX: (event.clientX - rect.left) * scaleX - node.x,
+    offsetY: (event.clientY - rect.top) * scaleY - node.y,
+  }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+function dragNode(event: PointerEvent) {
+  const drag = activeDrag.value
+  const stage = graphStageRef.value
+  if (!drag || !stage) return
+
+  const node = getNode(drag.key)
+  if (!node) return
+
+  const rect = stage.getBoundingClientRect()
+  const scaleX = graphWidth / rect.width
+  const scaleY = graphHeight / rect.height
+  const nextX = (event.clientX - rect.left) * scaleX - drag.offsetX
+  const nextY = (event.clientY - rect.top) * scaleY - drag.offsetY
+
+  node.x = Math.max(0, Math.min(graphWidth - node.width, nextX))
+  node.y = Math.max(0, Math.min(graphHeight - node.height, nextY))
+}
+
+function stopDrag() {
+  activeDrag.value = null
+}
+
+function zoomGraph(event: WheelEvent) {
+  event.preventDefault()
+  const nextZoom = graphZoom.value + (event.deltaY > 0 ? -0.06 : 0.06)
+  graphZoom.value = Math.max(0.55, Math.min(1.25, Number(nextZoom.toFixed(2))))
+}
+
 </script>
 
 <template>
-  <main class="app-frame">
-    <div class="breadcrumb"></div>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64">
+            <defs>
+              <path id="logoTextTop" d="M12 31a20 20 0 0 1 40 0" />
+              <path id="logoTextBottom" d="M52 35a20 20 0 0 1-40 0" />
+            </defs>
+            <circle class="logo-ring-outer" cx="32" cy="32" r="29" />
+            <circle class="logo-ring-inner" cx="32" cy="32" r="22" />
+            <text class="logo-cn">
+              <textPath href="#logoTextTop" startOffset="50%" text-anchor="middle">赛知图谱科技馆</textPath>
+            </text>
+            <text class="logo-en">
+              <textPath href="#logoTextBottom" startOffset="50%" text-anchor="middle">ScienceCorpus</textPath>
+            </text>
+            <path class="logo-brain" d="M25 24c-4 1-7 4-7 8 0 5 4 8 9 8h12c5 0 8-4 8-9 0-5-4-9-9-9-2-4-8-5-13-2" />
+            <path class="logo-brain" d="M24 27c4 0 6 2 7 5" />
+            <path class="logo-brain" d="M34 23c1 4 0 7-3 9" />
+            <path class="logo-brain" d="M39 28c-2 2-5 3-8 2" />
+            <path class="logo-line" d="M25 39v8" />
+            <path class="logo-line" d="M32 39v13" />
+            <path class="logo-line" d="M39 39v8" />
+            <circle class="logo-dot" cx="25" cy="48" r="1.8" />
+            <circle class="logo-dot" cx="32" cy="53" r="1.8" />
+            <circle class="logo-dot" cx="39" cy="48" r="1.8" />
+          </svg>
+        </span>
+        <strong>知识图谱平台</strong>
+        <button class="sidebar-toggle" type="button" aria-label="折叠侧边栏">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
 
-    <section class="workspace">
-      <aside class="sidebar">
-        <div class="brand">
-          <img class="brand-logo" :src="sidebarLogo" alt="知识图谱平台" />
-          <img class="brand-menu-icon" :src="sidebarMenu" alt="" aria-hidden="true" />
-        </div>
-
-        <nav class="nav-main">
-          <div class="nav-root"><span class="nav-icon"><img :src="navFlowIcon" alt="" aria-hidden="true" /></span>流程编排<i>›</i></div>
-          <div class="nav-root"><span class="nav-icon"><img :src="navGraphIcon" alt="" aria-hidden="true" /></span>图谱服务</div>
-          <div class="nav-root active-root">
-            <span class="nav-icon"><img :src="navReasonIcon" alt="" aria-hidden="true" /></span>
-            知识推理服务
+      <nav class="nav-list" aria-label="主导航">
+        <button class="nav-item" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="7" cy="6" r="3" />
+              <circle cx="17" cy="6" r="3" />
+              <circle cx="7" cy="18" r="3" />
+              <path d="M10 6h4" />
+              <path d="M7 9v6" />
+              <path d="M10 18h8" />
+            </svg>
+          </span>
+          <span>流程编排</span>
+          <span class="nav-caret" aria-hidden="true"></span>
+        </button>
+        <button class="nav-item" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="8" y="3" width="8" height="5" rx="1.5" />
+              <circle cx="5" cy="19" r="2" />
+              <circle cx="12" cy="19" r="2" />
+              <circle cx="19" cy="19" r="2" />
+              <path d="M12 8v6" />
+              <path d="M5 17v-3h14v3" />
+            </svg>
+          </span>
+          <span>图谱服务</span>
+        </button>
+        <section class="nav-section">
+          <button class="nav-item expanded" type="button" @click="isReasoningExpanded = !isReasoningExpanded">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="2.2" />
+                <circle cx="5" cy="12" r="2.2" />
+                <circle cx="19" cy="12" r="2.2" />
+                <circle cx="12" cy="19" r="2.2" />
+                <path d="M10.3 6.5L6.7 10.3" />
+                <path d="M13.7 6.5l3.6 3.8" />
+                <path d="M6.7 13.7l3.6 3.8" />
+                <path d="M17.3 13.7l-3.6 3.8" />
+                <path d="M9 12h6" />
+              </svg>
+            </span>
+            <span>知识推理服务</span>
+            <span class="nav-caret" :class="{ expanded: isReasoningExpanded }" aria-hidden="true"></span>
+          </button>
+          <div v-if="isReasoningExpanded" class="nav-children">
             <button
-              class="nav-toggle"
+              v-for="feature in relationFeatures"
+              :key="feature.navLabel"
+              class="nav-child"
+              :class="{ active: feature.navLabel === activeFeatureLabel }"
               type="button"
-              :aria-expanded="inferMenuExpanded"
-              aria-label="展开或收起知识推理服务列表"
-              @click="toggleInferMenu"
+              @click="selectFeatureByNav(feature.navLabel)"
             >
-              <i :class="{ expanded: inferMenuExpanded }">›</i>
+              {{ feature.navLabel }}
             </button>
           </div>
-          <div v-show="inferMenuExpanded" class="nav-branch">
-            <span>科技专家直接关系</span>
-            <span>科技节点间接关系</span>
-            <span>科技两点合作成果</span>
-            <span>科技专家同事关系</span>
-            <span>科技专家校友关系</span>
-            <span class="selected">专家论文合作关系</span>
-            <span>重点科技企业关系</span>
-            <span>产业链点事件关系</span>
-            <span>科技产业链全景图</span>
+        </section>
+      </nav>
+
+      <div class="sidebar-user">
+        <span class="user-avatar" aria-hidden="true"></span>
+        <strong>Ben</strong>
+        <button class="user-message" type="button" aria-label="消息"></button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <section class="page-card">
+        <div class="module-head">
+          <div class="tabbar" role="tablist" aria-label="功能页签">
+            <button
+              class="main-tab"
+              :class="{ active: mainTab === 'test' }"
+              type="button"
+              @click="mainTab = 'test'"
+            >
+              算法测试
+            </button>
+            <button
+              class="main-tab"
+              :class="{ active: mainTab === 'developer' }"
+              type="button"
+              @click="mainTab = 'developer'"
+            >
+              开发者接口
+            </button>
           </div>
-        </nav>
-
-        <div class="user-box">
-          <span class="avatar"></span>
-          <strong>Ben</strong>
-          <img class="chat-icon" :src="chatIcon" alt="" aria-hidden="true" />
+          <button class="text-action" type="button" @click="showTechPlan = true">
+            <span class="info-icon" data-tooltip="查看技术方案">i</span>
+            技术方案
+          </button>
         </div>
-      </aside>
 
-      <section class="main-card">
-        <div class="inner-card">
-          <header class="top-tabs">
-            <div class="tabs">
-              <button class="tab" :class="{ active: activePage === 'test' }" type="button" @click="activePage = 'test'">算法测试</button>
-              <button class="tab" :class="{ active: activePage === 'developer' }" type="button" @click="activePage = 'developer'">开发者接口</button>
-            </div>
-            <button class="scheme-btn" type="button" @click="openSchemeModal">ⓘ 技术方案</button>
-          </header>
-
-          <template v-if="activePage === 'test'">
-            <div class="control-row">
-              <label class="select-label">子功能名称：<span class="info">ⓘ</span></label>
-              <div class="select-dropdown" :class="{ open: testSubfunctionOpen }">
-                <button class="select-box" type="button" @click.stop="toggleTestSubfunction">
-                  {{ selectedSubfunction }} <span>⌄</span>
+        <div class="control-line" :class="{ 'developer-control-line': mainTab === 'developer' }">
+          <div class="feature-line">
+            <span>子功能名称:</span>
+            <div class="feature-dropdown">
+              <button
+                class="feature-select"
+                :class="{ open: showFeatureMenu }"
+                type="button"
+                aria-haspopup="listbox"
+                :aria-expanded="showFeatureMenu"
+                @click="showFeatureMenu = !showFeatureMenu"
+              >
+                <span>{{ selectedFeature }}</span>
+                <span class="select-arrow" aria-hidden="true"></span>
+              </button>
+              <div v-if="showFeatureMenu" class="feature-menu" role="listbox">
+                <button
+                  v-for="option in featureOptions"
+                  :key="option"
+                  class="feature-option"
+                  :class="{ active: selectedFeature === option }"
+                  type="button"
+                  role="option"
+                  :aria-selected="selectedFeature === option"
+                  @click="selectFeatureByName(option)"
+                >
+                  {{ option }}
                 </button>
-                <div v-if="testSubfunctionOpen" class="select-dropdown-menu">
-                  <button
-                    v-for="option in subfunctionOptions"
-                    :key="`test-${option}`"
-                    class="select-dropdown-item"
-                    type="button"
-                    @click.stop="selectSubfunction(option)"
-                  >
-                    {{ option }}
-                  </button>
-                </div>
-              </div>
-              <div class="control-actions">
-                <button class="outline-btn" type="button" @click="openParamModal">参数设置</button>
-                <button class="primary-btn" type="button" @click="runTest()">{{ loading ? '测试中' : '执行测试' }}</button>
               </div>
             </div>
+            <span class="info-icon" data-tooltip="当前子功能用于构建专家与重点企业之间的关系图谱">i</span>
+          </div>
 
-            <p v-if="error" class="error-text">{{ error }}</p>
-
-            <section class="result-shell">
-              <div class="result-head">
-                <div class="preview-head">
-                  <h2>测试结果预览</h2>
-                  <span>最近测试时间：　{{ lastTestTime }}</span>
-                </div>
-                <div class="detail-head">
-                  <h2>结果详情</h2>
-                  <div class="detail-tabs">
-                    <button type="button" :class="{ active: activeTab === 'structured' }" @click="activeTab = 'structured'">结构化结果</button>
-                    <button type="button" :class="{ active: activeTab === 'api' }" @click="activeTab = 'api'">API结果示例</button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="result-grid">
-                <div class="graph-preview">
-                  <div ref="previewViewportRef" class="graph-preview-viewport">
-                    <div class="graph-preview-board">
-                      <svg class="graph-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                        <path class="line purple" :d="previewGraph.topPath" />
-                        <path class="line blue" :d="previewGraph.authorPath" />
-                        <path class="line green" :d="previewGraph.frequencyPath" />
-                        <path class="line green" :d="previewGraph.topicPath" />
-                        <path class="line dashed" :d="previewGraph.periodPath" />
-                        <path class="line orange" :d="previewGraph.contributionPath" />
-                      </svg>
-
-                      <div
-                        class="relation-pill"
-                        :style="{ left: `${previewGraph.relationPill.x}%`, top: `${previewGraph.relationPill.y}%` }"
-                      >
-                        论文合作
-                      </div>
-
-                      <article
-                        class="node node-a expert-card"
-                        :class="{ dragging: draggingNodeId === 'expertA' }"
-                        :style="nodeStyle('expertA')"
-                        @mousedown="startNodeDrag('expertA', $event)"
-                      >
-                        <span class="card-corner-label">专家A</span>
-                        <div class="expert-card-body">
-                          <span class="badge-circle badge-expert" aria-hidden="true"></span>
-                          <div class="expert-card-copy">
-                            <strong>{{ authorA }}</strong>
-                            <small>{{ unitA }}</small>
-                          </div>
-                        </div>
-                      </article>
-
-                      <article
-                        class="node node-b expert-card"
-                        :class="{ dragging: draggingNodeId === 'expertB' }"
-                        :style="nodeStyle('expertB')"
-                        @mousedown="startNodeDrag('expertB', $event)"
-                      >
-                        <span class="card-corner-label">专家B</span>
-                        <div class="expert-card-body">
-                          <span class="badge-circle badge-expert" aria-hidden="true"></span>
-                          <div class="expert-card-copy">
-                            <strong>{{ authorB }}</strong>
-                            <small>{{ unitB }}</small>
-                          </div>
-                        </div>
-                      </article>
-
-                      <article
-                        class="node paper-node"
-                        :class="{ dragging: draggingNodeId === 'paper' }"
-                        :style="nodeStyle('paper')"
-                        @mousedown="startNodeDrag('paper', $event)"
-                      >
-                        <div class="paper-card-body">
-                          <span class="badge-circle badge-paper" aria-hidden="true"></span>
-                          <div class="paper-copy">
-                            <strong>合作论文</strong>
-                            <div class="paper-metric">共同论文 <em>{{ paperCount }}</em> 篇</div>
-                            <div class="paper-metric">合作频次 <em>{{ frequency }}</em> 次</div>
-                            <div class="paper-metric-chip-row">
-                              <span
-                                v-for="(metric, index) in cooperationMetrics"
-                                :key="metric"
-                                :class="{ wide: index === 0 }"
-                              >
-                                {{ metric }}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </article>
-
-                      <article
-                        class="node topic-node"
-                        :class="{ dragging: draggingNodeId === 'topic' }"
-                        :style="nodeStyle('topic')"
-                        @mousedown="startNodeDrag('topic', $event)"
-                      >
-                        <div class="summary-card-body">
-                          <span class="badge-circle badge-topic" aria-hidden="true"></span>
-                          <div class="summary-copy">
-                            <strong>论文主题</strong>
-                            <div class="topic-chip-row">
-                              <span v-for="topic in previewTopics" :key="topic">{{ topic }}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </article>
-
-                      <article
-                        class="node period-node"
-                        :class="{ dragging: draggingNodeId === 'period' }"
-                        :style="nodeStyle('period')"
-                        @mousedown="startNodeDrag('period', $event)"
-                      >
-                        <div class="summary-card-body">
-                          <span class="badge-circle badge-period" aria-hidden="true"></span>
-                          <div class="summary-copy">
-                            <strong>合作周期</strong>
-                            <small>{{ periodCompact }}</small>
-                          </div>
-                        </div>
-                      </article>
-
-                      <article
-                        class="node contribution-node"
-                        :class="{ dragging: draggingNodeId === 'contribution' }"
-                        :style="nodeStyle('contribution')"
-                        @mousedown="startNodeDrag('contribution', $event)"
-                      >
-                        <div class="summary-card-body impact-card-body">
-                          <span class="badge-circle badge-impact" aria-hidden="true"></span>
-                          <div class="summary-copy impact-copy">
-                            <strong>共同贡献</strong>
-                            <div class="impact-tag-row">
-                              <span v-for="tag in sharedContributionTags" :key="tag">{{ tag }}</span>
-                            </div>
-                            <div class="impact-info-block">
-                              <span class="impact-info-label">稳定团队成员</span>
-                              <span class="impact-info-value">{{ stableTeamMembersText }}</span>
-                            </div>
-                            <div class="impact-info-block">
-                              <span class="impact-info-label">核心合作人员</span>
-                              <span class="impact-info-value">{{ coreCollaboratorsText }}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </article>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="detail-column">
-                  <div class="detail-table" v-if="activeTab === 'structured'">
-                    <div v-for="row in rows" :key="row[0]" class="table-row">
-                      <span>{{ row[0] }}</span>
-                      <strong>{{ row[1] }}</strong>
-                    </div>
-                  </div>
-                  <div v-else class="api-panel-shell">
-                    <pre class="api-panel">{{ JSON.stringify(apiExample, null, 2) }}</pre>
-                  </div>
-                </div>
-              </div>
-            </section>
+          <template v-if="mainTab === 'developer'">
+            <div class="inline-api-field">
+              <span>接口路径：</span>
+              <div class="inline-input">{{ currentApiPath }}</div>
+            </div>
+            <div class="inline-method">
+              <span>请求方法：</span>
+              <strong>POST</strong>
+            </div>
           </template>
 
-          <section v-else class="developer-shell">
-            <div class="developer-toolbar">
-              <div class="developer-toolbar-main">
-                <label class="select-label">子功能名称：</label>
-                <div class="select-dropdown developer-select-dropdown" :class="{ open: developerSubfunctionOpen }">
-                  <button class="select-box developer-select" type="button" @click.stop="toggleDeveloperSubfunction">
-                    {{ selectedSubfunction }} <span>⌄</span>
-                  </button>
-                  <div v-if="developerSubfunctionOpen" class="select-dropdown-menu">
-                    <button
-                      v-for="option in subfunctionOptions"
-                      :key="`developer-${option}`"
-                      class="select-dropdown-item"
-                      type="button"
-                      @click.stop="selectSubfunction(option)"
-                    >
-                      {{ option }}
-                    </button>
-                  </div>
-                </div>
-                <span class="developer-info">ⓘ</span>
-              </div>
-              <div class="developer-toolbar-side">
-                <div class="developer-meta-item">
-                  <span>接口路径：</span>
-                  <div class="developer-meta-box">/api/v1/scholar-paper-cooperation/demo/structured-result</div>
-                </div>
-                <div class="developer-method"><span>请求方法：</span><strong>POST</strong></div>
-              </div>
-            </div>
+          <div v-if="mainTab === 'test'" class="actions">
+            <button class="secondary-button" type="button" @click="showParams = true">参数设置</button>
+            <button class="primary-button" type="button" @click="runTest">执行测试</button>
+          </div>
+        </div>
 
-            <div class="developer-panels">
-              <section class="developer-card">
-                <div class="developer-card-title">请求参数</div>
-                <div class="developer-table-shell">
-                  <div class="developer-table developer-request-table">
-                    <div class="developer-table-head developer-table-row four-col">
-                      <span>字段名</span>
-                      <span>类型</span>
-                      <span>必填</span>
-                      <span>说明</span>
-                    </div>
-                    <div v-for="field in developerRequestFields" :key="field.name" class="developer-table-row four-col">
-                      <strong>{{ field.name }}</strong>
-                      <span>{{ field.type }}</span>
-                      <span>{{ field.required }}</span>
-                      <span>{{ field.description }}</span>
-                    </div>
-                  </div>
-                </div>
-              </section>
+        <template v-if="mainTab === 'test'">
+          <div class="test-grid">
+            <section class="graph-panel" :aria-label="graphAriaLabel">
+              <div class="graph-canvas" @wheel="zoomGraph">
+                <div
+                  ref="graphStageRef"
+                  class="graph-stage"
+                  :style="graphStageStyle"
+                  @pointermove="dragNode"
+                  @pointerup="stopDrag"
+                  @pointercancel="stopDrag"
+                  @pointerleave="stopDrag"
+                >
+                  <svg class="graph-lines" :viewBox="`0 0 ${graphWidth} ${graphHeight}`" aria-hidden="true">
+                    <defs>
+                      <marker
+                        id="arrow-blue"
+                        viewBox="0 0 10 10"
+                        refX="9"
+                        refY="5"
+                        markerWidth="9"
+                        markerHeight="9"
+                        orient="auto-start-reverse"
+                      >
+                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f7cff" />
+                      </marker>
+                      <marker
+                        id="arrow-purple"
+                        viewBox="0 0 10 10"
+                        refX="9"
+                        refY="5"
+                        markerWidth="9"
+                        markerHeight="9"
+                        orient="auto-start-reverse"
+                      >
+                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b5cf6" />
+                      </marker>
+                      <marker
+                        id="arrow-orange"
+                        viewBox="0 0 10 10"
+                        refX="9"
+                        refY="5"
+                        markerWidth="9"
+                        markerHeight="9"
+                        orient="auto-start-reverse"
+                      >
+                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b" />
+                      </marker>
+                    </defs>
+                    <path
+                      v-for="node in companyNodes"
+                      :key="`${node.key}-path`"
+                      class="relation-edge"
+                      :class="relationTone(node.relation)"
+                      :d="relationPath(node)"
+                      :marker-end="relationMarker(node.relation)"
+                    />
+                  </svg>
 
-              <section class="developer-card">
-                <div class="developer-card-title">返回字段</div>
-                <div class="developer-table-shell">
-                  <div class="developer-table">
-                    <div class="developer-table-head developer-table-row three-col">
-                      <span>字段名</span>
-                      <span>类型</span>
-                      <span>说明</span>
-                    </div>
-                    <div v-for="field in developerResponseFields" :key="field.name" class="developer-table-row three-col">
-                      <strong>{{ field.name }}</strong>
-                      <span>{{ field.type }}</span>
-                      <span>{{ field.description }}</span>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
-
-            <section class="developer-code-shell">
-              <div class="developer-code-head">
-                <div class="developer-card-title">代码示例</div>
-                <div class="developer-language-tabs">
-                  <button type="button" :class="{ active: developerCodeTab === 'python' }" @click="developerCodeTab = 'python'">Python</button>
-                  <button type="button" :class="{ active: developerCodeTab === 'node' }" @click="developerCodeTab = 'node'">Node.js</button>
-                  <button type="button" :class="{ active: developerCodeTab === 'curl' }" @click="developerCodeTab = 'curl'">cURL</button>
-                </div>
-              </div>
-
-              <div class="developer-code-block">
-                <div class="developer-code-scroll">
-                  <div v-for="(line, index) in currentDeveloperCodeLines" :key="`${developerCodeTab}-${index}`" class="developer-code-line">
-                    <span class="developer-code-number">{{ index + 1 }}</span>
-                    <code class="developer-code-text">{{ line || ' ' }}</code>
-                  </div>
-                </div>
-                <div class="developer-code-footer">
-                  <button
-                    class="developer-copy-btn"
-                    type="button"
-                    :title="copiedCodeTab === developerCodeTab ? '已复制' : '复制示例'"
-                    @click="copyDeveloperCode"
+                  <span
+                    v-for="node in companyNodes"
+                    :key="`${node.key}-label`"
+                    class="relation-label"
+                    :class="relationTone(node.relation)"
+                    :style="relationLabelStyle(node)"
                   >
-                    {{ copiedCodeTab === developerCodeTab ? '已复制' : '复制' }}
-                  </button>
+                    {{ node.relation }}
+                  </span>
+
+                <div
+                  v-for="node in graphNodes"
+                  :key="node.key"
+                  class="graph-node"
+                  :class="[{ dragging: activeDrag?.key === node.key }, node.kind === 'expert' ? 'expert-node' : 'company-node']"
+                  :style="nodeStyle(node)"
+                  @pointerdown="startDrag($event, node)"
+                >
+                  <strong>{{ node.title }}</strong>
+                  <span>{{ node.subtitle }}</span>
+                </div>
                 </div>
               </div>
             </section>
-          </section>
-        </div>
-      </section>
-    </section>
 
-    <div v-if="showParamModal" class="modal-mask" @click.self="closeParamModal">
-      <section class="param-modal">
-        <header class="param-modal-header">
-          <div class="param-modal-title-wrap">
-            <span class="param-modal-icon">✻</span>
-            <h3>测试参数设置</h3>
+            <aside class="result-panel">
+              <div class="result-tabs">
+                <button
+                  :class="{ active: resultTab === 'structured' }"
+                  type="button"
+                  @click="resultTab = 'structured'"
+                >
+                  结构化结果
+                </button>
+                <button
+                  :class="{ active: resultTab === 'api' }"
+                  type="button"
+                  @click="resultTab = 'api'"
+                >
+                  API结果示例
+                </button>
+              </div>
+
+              <div v-if="resultTab === 'structured'" class="detail-list">
+                <div v-if="activeLoading" class="detail-row"><span>状态</span><strong>加载中…</strong></div>
+                <div v-else-if="activeError" class="detail-row detail-error"><span>错误</span><strong>{{ activeError }}</strong></div>
+                <template v-else>
+                  <div v-for="row in detailRows" :key="`${row[0]}-${row[1]}`" class="detail-row">
+                    <span>{{ row[0] }}</span>
+                    <strong>{{ row[1] }}</strong>
+                  </div>
+                  <div v-if="detailRows.length === 0" class="detail-row"><span>提示</span><strong>点击「执行测试」查看结果</strong></div>
+                </template>
+              </div>
+              <pre v-else class="api-code">{{ apiExample }}</pre>
+            </aside>
           </div>
-          <div class="param-modal-meta">
-            <span><em>*</em> 为必填项</span>
-            <button class="param-close" type="button" @click="closeParamModal">×</button>
+        </template>
+
+        <template v-else>
+          <div class="developer-surface">
+            <div class="table-grid">
+              <section class="doc-table">
+                <h2>请求参数</h2>
+                <div class="doc-table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>字段名</th>
+                      <th>类型</th>
+                      <th>必填</th>
+                      <th>说明</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in requestRows" :key="row[0]">
+                      <td>{{ row[0] }}</td>
+                      <td>{{ row[1] }}</td>
+                      <td>{{ row[2] }}</td>
+                      <td>{{ row[3] }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                </div>
+              </section>
+
+              <section class="doc-table">
+                <h2>返回字段</h2>
+                <div class="doc-table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>字段名</th>
+                      <th>类型</th>
+                      <th>说明</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in responseRows" :key="row[0]">
+                      <td>{{ row[0] }}</td>
+                      <td>{{ row[1] }}</td>
+                      <td>{{ row[2] }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                </div>
+              </section>
+            </div>
+
+            <section class="code-panel">
+              <div class="code-head">
+                <h2>代码示例</h2>
+                <div class="code-tabs">
+                  <button
+                    :class="{ active: activeCodeTab === 'Python' }"
+                    type="button"
+                    @click="activeCodeTab = 'Python'"
+                  >
+                    Python
+                  </button>
+                  <button
+                    :class="{ active: activeCodeTab === 'Node.js' }"
+                    type="button"
+                    @click="activeCodeTab = 'Node.js'"
+                  >
+                    Node.js
+                  </button>
+                  <button
+                    :class="{ active: activeCodeTab === 'cURL' }"
+                    type="button"
+                    @click="activeCodeTab = 'cURL'"
+                  >
+                    cURL
+                  </button>
+                </div>
+              </div>
+              <div v-if="renderedCodeLines" class="highlight-code" aria-label="Python代码示例">
+                <div v-for="(line, index) in renderedCodeLines" :key="index" class="code-line">
+                  <span class="line-number">{{ index + 1 }}</span>
+                  <span class="line-content">
+                    <template v-for="(part, partIndex) in line" :key="partIndex">
+                      <span :class="`code-${part.tone}`">{{ part.text }}</span>
+                    </template>
+                  </span>
+                </div>
+              </div>
+              <pre v-else>{{ codeExample }}</pre>
+              <button class="copy-button" type="button" aria-label="复制代码">□</button>
+            </section>
           </div>
+        </template>
+      </section>
+    </main>
+
+    <div v-if="showParams" class="modal-mask" role="dialog" aria-modal="true" aria-label="测试参数设置">
+      <form class="param-modal" @submit.prevent="saveParamsAndRun">
+        <header>
+          <h2>
+            <span class="param-title-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20">
+                <circle cx="10" cy="10" r="2.5" />
+                <path d="M10 2.5v2" />
+                <path d="M10 15.5v2" />
+                <path d="M2.5 10h2" />
+                <path d="M15.5 10h2" />
+                <path d="M4.7 4.7l1.4 1.4" />
+                <path d="M13.9 13.9l1.4 1.4" />
+                <path d="M15.3 4.7l-1.4 1.4" />
+                <path d="M6.1 13.9l-1.4 1.4" />
+              </svg>
+            </span>
+            测试参数设置
+          </h2>
+          <span class="required-hint"><b>*</b> 为必填项</span>
+          <button class="icon-button" type="button" aria-label="关闭" @click="showParams = false">×</button>
         </header>
 
-        <div class="param-form">
-          <label class="param-row">
-            <span class="param-label required">dataSource</span>
-            <select v-model="draftParams.dataSource" class="param-field param-select">
-              <option v-for="option in dataSourceOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+        <template v-if="subFunctionKey === 'build'">
+          <label class="param-field required">
+            <span>scholarId</span>
+            <select v-model="params.scholarId">
+              <option v-for="s in scholarOptions" :key="s.scholarId" :value="s.scholarId">
+                {{ s.name }}（{{ s.scholarId }}）
+              </option>
             </select>
           </label>
-
-          <label class="param-row">
-            <span class="param-label required">expertAId</span>
-            <input v-model="draftParams.expertAId" class="param-field" type="text" placeholder="请输入 expertAId" />
+          <label class="param-field required">
+            <span>enterpriseId</span>
+            <select v-model="params.enterpriseId">
+              <option v-for="e in enterpriseOptions" :key="e.enterpriseId" :value="e.enterpriseId">
+                {{ e.name }}（{{ e.enterpriseId }}）
+              </option>
+            </select>
           </label>
-
-          <label class="param-row">
-            <span class="param-label required">expertBId</span>
-            <input v-model="draftParams.expertBId" class="param-field" type="text" placeholder="请输入 expertBId" />
-          </label>
-
-          <div class="param-row">
-            <span class="param-label">timeRange</span>
-            <div class="param-date-range">
-              <input v-model="draftParams.startTime" class="param-field" type="date" />
-              <span class="date-separator">-</span>
-              <input v-model="draftParams.endTime" class="param-field" type="date" />
+          <label class="param-field required">
+            <span>relationTypes</span>
+            <select class="ms-add" @change="pushMulti('relationTypes', ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
+              <option value="" disabled selected>请选择（可多选，每选一项加一条）</option>
+              <option v-for="o in relationTypeOpts" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+            <div class="ms-tags">
+              <span v-for="o in selectedItems(params.relationTypes, relationTypeOpts)" :key="o.value" class="ms-tag">
+                {{ o.label }}<button type="button" class="ms-tag-x" @click="removeMulti('relationTypes', o.value)">×</button>
+              </span>
             </div>
-          </div>
-        </div>
+          </label>
+        </template>
 
-        <footer class="param-modal-footer">
-          <button class="param-cancel" type="button" @click="closeParamModal">取消</button>
-          <button class="param-save" type="button" @click="saveAndRun">保存并执行</button>
+        <template v-else-if="subFunctionKey === 'annotate'">
+          <label class="param-field required">
+            <span>relationId</span>
+            <select v-model="annotationParams.relationId">
+              <option v-for="e in edgeOptions" :key="e.relationId" :value="e.relationId">
+                {{ e.scholarId }} → {{ e.enterpriseId }}
+              </option>
+            </select>
+          </label>
+          <label class="param-field required">
+            <span>roleType</span>
+            <select v-model="annotationParams.roleType">
+              <option v-for="o in roleOpts" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+          </label>
+          <label class="param-field">
+            <span>techField</span>
+            <select v-model="annotationParams.techField">
+              <option v-for="f in techFieldOpts" :key="f" :value="f">{{ f }}</option>
+            </select>
+          </label>
+          <label class="param-field">
+            <span>period.start</span>
+            <input v-model="annotationParams.period.start" placeholder="开始日期" />
+          </label>
+          <label class="param-field">
+            <span>period.end</span>
+            <input v-model="annotationParams.period.end" placeholder="结束日期" />
+          </label>
+        </template>
+
+        <template v-else-if="subFunctionKey === 'analyze'">
+          <label class="param-field required">
+            <span>enterpriseId</span>
+            <select v-model="analysisParams.enterpriseId">
+              <option v-for="e in enterpriseOptions" :key="e.enterpriseId" :value="e.enterpriseId">
+                {{ e.name }}（{{ e.enterpriseId }}）
+              </option>
+            </select>
+          </label>
+          <label class="param-field required">
+            <span>analysisDimensions</span>
+            <select class="ms-add" @change="pushMulti('analysisDimensions', ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
+              <option value="" disabled selected>请选择（可多选，每选一项加一条）</option>
+              <option v-for="o in dimensionOpts" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+            <div class="ms-tags">
+              <span v-for="o in selectedItems(analysisParams.analysisDimensions, dimensionOpts)" :key="o.value" class="ms-tag">
+                {{ o.label }}<button type="button" class="ms-tag-x" @click="removeMulti('analysisDimensions', o.value)">×</button>
+              </span>
+            </div>
+          </label>
+          <label class="param-field">
+            <span>patentCPC</span>
+            <select class="ms-add" @change="pushMulti('patentCPC', ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
+              <option value="" disabled selected>请选择（可多选，每选一项加一条）</option>
+              <option v-for="c in cpcOpts" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <div class="ms-tags">
+              <span v-for="c in analysisParams.patentCPC" :key="c" class="ms-tag">
+                {{ c }}<button type="button" class="ms-tag-x" @click="removeMulti('patentCPC', c)">×</button>
+              </span>
+            </div>
+          </label>
+        </template>
+
+        <template v-else-if="subFunctionKey === 'paper_analyze'">
+          <label class="param-field required">
+            <span>expertAId</span>
+            <select v-model="paperCoopParams.expertAId">
+              <option v-for="s in scholarOptions" :key="s.scholarId" :value="s.scholarId">
+                {{ s.name }}（{{ s.scholarId }}）
+              </option>
+            </select>
+          </label>
+          <label class="param-field required">
+            <span>expertBId</span>
+            <select v-model="paperCoopParams.expertBId">
+              <option v-for="s in scholarOptions" :key="s.scholarId" :value="s.scholarId">
+                {{ s.name }}（{{ s.scholarId }}）
+              </option>
+            </select>
+          </label>
+          <label class="param-field">
+            <span>startTime</span>
+            <input v-model="paperCoopParams.startTime" placeholder="开始时间 YYYY-MM-DD" />
+          </label>
+          <label class="param-field">
+            <span>endTime</span>
+            <input v-model="paperCoopParams.endTime" placeholder="结束时间 YYYY-MM-DD" />
+          </label>
+        </template>
+
+        <template v-else-if="subFunctionKey === 'direct_analyze'">
+          <label class="param-field required">
+            <span>expertAId</span>
+            <select v-model="directRelParams.expertAId">
+              <option v-for="s in scholarOptions" :key="s.scholarId" :value="s.scholarId">
+                {{ s.name }}（{{ s.scholarId }}）
+              </option>
+            </select>
+          </label>
+          <label class="param-field required">
+            <span>expertBId</span>
+            <select v-model="directRelParams.expertBId">
+              <option v-for="s in scholarOptions" :key="s.scholarId" :value="s.scholarId">
+                {{ s.name }}（{{ s.scholarId }}）
+              </option>
+            </select>
+          </label>
+        </template>
+
+        <footer>
+          <button class="secondary-button" type="button" @click="showParams = false">取消</button>
+          <button class="primary-button" type="submit">保存并执行</button>
         </footer>
-      </section>
+      </form>
     </div>
 
-    <div v-if="showSchemeModal" class="modal-mask" @click.self="closeSchemeModal">
-      <section class="scheme-modal">
-        <header class="scheme-modal-header">
-          <h3>技术方案</h3>
-          <button class="scheme-close" type="button" @click="closeSchemeModal">×</button>
+    <div v-if="showTechPlan" class="modal-mask" role="dialog" aria-modal="true" aria-label="技术方案">
+      <section class="tech-modal">
+        <header>
+          <h2>技术方案</h2>
+          <button class="icon-button" type="button" aria-label="关闭" @click="showTechPlan = false">×</button>
         </header>
 
-        <div class="scheme-modal-body">
-          <section class="scheme-section">
-            <h4>功能描述</h4>
-            <div class="scheme-description-card">
-              基于科技专家发表论文的作者列表、作者单位、合作发表时间、论文主题与被引数据，通过作者关联、合作频次与影响力评估算法构建论文合作关系网络，输出合作论文、期刊/会议级别、研究方向、合作成果、长期稳定团队和核心合作人员。
-            </div>
-          </section>
+        <article>
+          <h3>功能描述</h3>
+          <p>
+            关联科技专家与重点企业主题，构建任职、顾问、研发合作等多类型实体关系，完善产学研关联图谱。
+          </p>
+        </article>
 
-          <section class="scheme-section">
-            <h4>推理流程</h4>
-            <div class="scheme-flow">
-              <article class="scheme-step-card">
-                <div class="scheme-step-icon">↓</div>
-                <strong>输入数据</strong>
-                <p>接收专家ID及相关筛选参数作为请求输入</p>
-              </article>
-              <span class="scheme-arrow">→</span>
-              <article class="scheme-step-card">
-                <div class="scheme-step-icon">⚙</div>
-                <strong>标准化处理</strong>
-                <p>统一作者、机构、时间和主题字段格式</p>
-              </article>
-              <span class="scheme-arrow">→</span>
-              <article class="scheme-step-card">
-                <div class="scheme-step-icon">⌘</div>
-                <strong>合作推理</strong>
-                <p>共同论文、合作次数、级别分布、被引情况</p>
-              </article>
-              <span class="scheme-arrow">→</span>
-              <article class="scheme-step-card">
-                <div class="scheme-step-icon">▤</div>
-                <strong>结果输出</strong>
-                <p>输出包含合作网络、稳定团队、核心人员、影响力结论</p>
-              </article>
-            </div>
-          </section>
-        </div>
+        <article>
+          <h3>推理流程</h3>
+          <div class="flow-grid">
+            <template v-for="(step, index) in flowSteps" :key="step[1]">
+              <div class="flow-card">
+                <span class="flow-icon" aria-hidden="true">
+                  <svg v-if="step[0] === 'input'" viewBox="0 0 32 32">
+                    <rect x="6" y="6" width="20" height="16" rx="2.5" />
+                    <path d="M16 10v8" />
+                    <path d="M12.5 14.5L16 18l3.5-3.5" />
+                    <path d="M12 26h8" />
+                    <path d="M16 22v4" />
+                  </svg>
+                  <svg v-else-if="step[0] === 'standardize'" viewBox="0 0 32 32">
+                    <path d="M7 9h7" />
+                    <path d="M20 9h5" />
+                    <circle cx="17" cy="9" r="3" />
+                    <path d="M7 16h14" />
+                    <path d="M27 16h-1" />
+                    <circle cx="24" cy="16" r="3" />
+                    <path d="M7 23h4" />
+                    <path d="M17 23h8" />
+                    <circle cx="14" cy="23" r="3" />
+                  </svg>
+                  <svg v-else-if="step[0] === 'reasoning'" viewBox="0 0 32 32">
+                    <circle cx="8" cy="9" r="3" />
+                    <circle cx="23" cy="8" r="3" />
+                    <circle cx="24" cy="23" r="3" />
+                    <circle cx="9" cy="22" r="3" />
+                    <path d="M11 10l9 10" />
+                    <path d="M20 9l-8 11" />
+                    <path d="M12 22h9" />
+                  </svg>
+                  <svg v-else viewBox="0 0 32 32">
+                    <path d="M9 6h12l4 4v13H9z" />
+                    <path d="M21 6v5h5" />
+                    <path d="M13 14h8" />
+                    <path d="M13 18h7" />
+                    <circle cx="22" cy="23" r="3" />
+                    <path d="M24 25l3 3" />
+                  </svg>
+                </span>
+                <strong>{{ step[1] }}</strong>
+                <p>{{ step[2] }}</p>
+              </div>
+              <span v-if="index < flowSteps.length - 1" class="flow-arrow">→</span>
+            </template>
+          </div>
+        </article>
       </section>
     </div>
-  </main>
+  </div>
 </template>
+
+<style scoped>
+.test-grid.single-column {
+  grid-template-columns: 1fr;
+}
+
+.panel {
+  margin-top: 24px;
+  padding: 20px 24px;
+  background: var(--panel);
+  border: 1px solid #e6ebf2;
+  border-radius: 12px;
+}
+
+.panel h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.params {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.params input[type='text'],
+.params input:not([type]),
+.params select {
+  padding: 8px 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  font-size: 14px;
+  min-width: 120px;
+  background: #fff;
+}
+
+.params input[type='checkbox'] {
+  margin-right: 4px;
+}
+
+.param-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.param-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ms-add {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  color: #334155;
+  min-height: 36px;
+}
+
+.ms-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ms-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 10px;
+  background: #eef4ff;
+  border: 1px solid #c7d8ff;
+  border-radius: 14px;
+  font-size: 13px;
+  color: #2f7cff;
+}
+
+.ms-tag-x {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.ms-tag-x:hover {
+  color: #be123c;
+}
+
+.result {
+  padding: 12px 0;
+  font-size: 14px;
+  color: #334155;
+  line-height: 1.7;
+}
+
+.result p {
+  margin: 4px 0;
+}
+
+.panel-dimension {
+  margin: 6px 0;
+}
+
+.panel-dimension strong {
+  color: #1f2937;
+  margin-right: 8px;
+}
+
+.panel-error {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  color: #be123c;
+  font-size: 13px;
+}
+
+.detail-error strong {
+  color: #be123c;
+}
+</style>
