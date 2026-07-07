@@ -1,9 +1,7 @@
-import 'ant-design-vue/dist/reset.css'
 import './styles/tokens.css'
 import './styles/reset.css'
 import './styles/global.css'
 
-import Antd from 'ant-design-vue'
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 
@@ -55,7 +53,7 @@ try {
     console.error(error)
     renderFatalError(error)
   }
-  app.use(createPinia()).use(router).use(Antd).mount('#app')
+  app.use(createPinia()).use(router).mount('#app')
 } catch (error) {
   console.error(error)
   renderFatalError(error)

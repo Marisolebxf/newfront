@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
+import KgDetailModal, { type DetailModalPayload } from '../../components/kg-detail-modal.vue'
+import ConstructionActionModal, { type ConstructionActionKey } from '../../components/construction-action-modal.vue'
+import KgGraphCanvas from '../../components/kg-graph-canvas.vue'
+import { useToast } from '../../composables/use-toast'
+import {
+  getServiceGraphPreset,
+  queryGraphPreset,
+  relationCategoryMap,
+  type GraphNodeData,
+} from '../../data/graph-presets'
+
 type PlatformTab = 'overview' | 'processing' | 'construction' | 'query' | 'service'
 type ServiceField = {
   name: string
@@ -194,6 +205,21 @@ const activeServiceKey = ref(modules[0]?.key ?? '')
 const activeBuildTab = ref<'entity' | 'relation' | 'property' | 'rule'>('entity')
 const activeServiceMode = ref<'test' | 'api'>('test')
 const selectedQueryType = ref('科技专家')
+const queryKeyword = ref('张明远')
+const queryRelationFilter = ref('论文合作')
+const queryConfidence = ref('>= 0.75')
+const queryApplied = ref(true)
+const buildSearchKeyword = ref('')
+const buildStatusFilter = ref('全部')
+const isActionLoading = ref(false)
+const selectedGraphNodeId = ref<string | null>('core')
+const detailModalOpen = ref(false)
+const detailModalPayload = ref<DetailModalPayload | null>(null)
+const constructionModalOpen = ref(false)
+const activeConstructionAction = ref<ConstructionActionKey | null>(null)
+const serviceGraphTick = ref(0)
+
+const { showToast } = useToast()
 
 const activeService = computed(() => modules.find((item) => item.key === activeServiceKey.value) ?? modules[0])
 const activeRequestJson = computed(() => JSON.stringify(activeService.value.requestExample, null, 2))
@@ -213,10 +239,10 @@ watch(
 )
 
 const metrics = [
-  { label: '实体总量', value: '1.28 亿', trend: '+18,426 今日新增', tone: 'blue' },
-  { label: '关系总量', value: '6.42 亿', trend: '+92,318 今日新增', tone: 'green' },
-  { label: '接入数据源', value: '42', trend: '论文/项目/企业/机构/事件', tone: 'purple' },
-  { label: '待人工审核', value: '326', trend: '低置信度与冲突数据', tone: 'orange' },
+  { label: '实体总量', value: '1.28 亿', hint: '+18,426 今日新增', tone: 'blue' },
+  { label: '关系总量', value: '6.42 亿', hint: '+92,318 今日新增', tone: 'green' },
+  { label: '接入数据源', value: '42', hint: '论文 / 项目 / 企业 / 机构', tone: 'purple' },
+  { label: '待人工审核', value: '326', hint: '低置信度与冲突数据', tone: 'orange' },
 ]
 
 const serviceTrend = [
@@ -243,18 +269,18 @@ const qualityRows = [
 ]
 
 const qualityGates = [
-  { label: '自动入库', value: '7,604', desc: '置信度 >= 0.85' },
-  { label: '人工审核', value: '326', desc: '低置信度或冲突数据' },
-  { label: '规则回写', value: '42', desc: '审核结果沉淀为规则样本' },
+  { label: '自动入库', value: '7,604', desc: '置信度 ≥ 0.85' },
+  { label: '人工审核', value: '326', desc: '低置信度或冲突' },
+  { label: '规则回写', value: '42', desc: '审核结果沉淀样本' },
 ]
 
 const pipeline = [
-  { name: '数据接入', desc: '读取论文、项目、成果、企业、机构、事件等多源数据', count: '12,438 条', status: '完成' },
-  { name: '清洗标准化', desc: '字段格式统一、缺失校验、别名规范和时间归一', count: '11,982 条', status: '完成' },
-  { name: '实体关系抽取', desc: '规则、算法和大模型辅助抽取实体、关系、属性', count: '8,942 条', status: '运行中' },
-  { name: '比对消歧', desc: '与存量图谱比对，判断新增、合并、更新或冲突', count: '1,203 条', status: '运行中' },
-  { name: '置信度审核', desc: '高置信度自动入库，低置信度进入人工审核', count: '326 条', status: '待审核' },
-  { name: '入库服务调用', desc: '写入图数据库并支撑统一查询和业务服务调用', count: '7,604 条', status: '排队' },
+  { name: '数据接入', count: '12,438 条', status: '完成', desc: '多源数据读取与批次登记' },
+  { name: '清洗标准化', count: '11,982 条', status: '完成', desc: '字段归一与缺失校验' },
+  { name: '实体关系抽取', count: '8,942 条', status: '运行中', desc: '规则与大模型联合抽取' },
+  { name: '比对消歧', count: '1,203 条', status: '运行中', desc: '与存量图谱比对合并' },
+  { name: '置信度审核', count: '326 条', status: '待审核', desc: '低置信度进入人工队列' },
+  { name: '入库服务调用', count: '7,604 条', status: '排队', desc: '写入图库并开放查询' },
 ]
 
 const taskRows = [
@@ -264,11 +290,11 @@ const taskRows = [
 ]
 
 const discoveryRows = [
-  { type: '新增实体', count: '3,261', sample: '华南智能芯片有限公司、先进计算实验室', strategy: '无高相似候选时创建新实体，进入实体审核或自动入库' },
-  { type: '新增关系', count: '8,942', sample: '论文合作、企业关联、产业事件参与', strategy: '基于规则和证据链校验，低置信度进入人工审核' },
-  { type: '新增属性', count: '1,203', sample: '被引次数、论文数量、企业经营状态', strategy: '识别动态属性变化，判断补充、更新、冲突或回滚' },
-  { type: '潜在隐藏关系', count: '286', sample: '共同项目间接路径、同导师链路、产业链事件共现', strategy: '路径分析和关系传递推理后进入候选关系池' },
-  { type: '冲突数据', count: '326', sample: '实体别名冲突、关系证据不足、属性来源不一致', strategy: '进入人工审核队列，审核结果回写图谱和规则样本' },
+  { type: '新增实体', count: '3,261', desc: '含企业、机构、专家等候选实体' },
+  { type: '新增关系', count: '8,942', desc: '论文合作、企业关联、事件参与' },
+  { type: '新增属性', count: '1,203', desc: '论文数量、被引、经营状态等' },
+  { type: '潜在隐藏关系', count: '286', desc: '路径推理发现的间接关联' },
+  { type: '冲突数据', count: '326', desc: '别名冲突与证据不足项' },
 ]
 
 const entityRows = [
@@ -298,47 +324,215 @@ const ruleRows = [
 const queryTypes = ['科技专家', '科技企业', '论文成果', '机构团队', '产业链节点']
 const relationFilters = ['直接关系', '间接关系', '同事', '校友', '论文合作', '企业关联', '产业事件']
 
+const querySummary = computed(() => {
+  if (!queryApplied.value) return '先设置查询条件，点击「查询」生成核心子图'
+  return `${selectedQueryType.value} / ${queryKeyword.value} / ${queryRelationFilter.value}`
+})
+
+const queryActiveCategories = computed(() => {
+  if (!queryApplied.value) return null
+  return relationCategoryMap[queryRelationFilter.value] ?? [queryRelationFilter.value]
+})
+
+const serviceGraph = computed(() => {
+  serviceGraphTick.value
+  return getServiceGraphPreset(activeServiceKey.value)
+})
+
+const selectedQueryNode = computed(() => {
+  return (
+    queryGraphPreset.nodes.find((node) => node.id === selectedGraphNodeId.value) ??
+    queryGraphPreset.nodes[0]
+  )
+})
+
+const selectedServiceNode = computed(() => {
+  return (
+    serviceGraph.value.nodes.find((node) => node.id === selectedGraphNodeId.value) ??
+    serviceGraph.value.nodes[0]
+  )
+})
+
+const filteredEntityRows = computed(() => {
+  return entityRows.filter((row) => {
+    const keyword = buildSearchKeyword.value.trim()
+    const keywordMatch =
+      !keyword ||
+      row.name.includes(keyword) ||
+      row.type.includes(keyword) ||
+      row.match.includes(keyword)
+    if (buildStatusFilter.value === '全部') return keywordMatch
+    if (buildStatusFilter.value === '待审核') return keywordMatch && row.action.includes('待')
+    if (buildStatusFilter.value === '自动入库') return keywordMatch && row.action.includes('合并')
+    if (buildStatusFilter.value === '冲突数据') return keywordMatch && row.action.includes('新实体')
+    return keywordMatch
+  })
+})
+
+const auditQueue = ref([
+  {
+    id: 'audit-1',
+    title: '实体重复疑似冲突',
+    status: '待审核',
+    summary: '「张明远」与「Zhang Mingyuan」相似度 0.82',
+    actions: ['确认合并', '保留新实体'],
+  },
+  {
+    id: 'audit-2',
+    title: '关系证据不足',
+    status: '待审核',
+    summary: '企业合作关系仅来自单一网页来源',
+    actions: ['通过', '退回规则'],
+  },
+  {
+    id: 'audit-3',
+    title: '属性来源不一致',
+    status: '处理中',
+    summary: '论文数量在不同数据源间相差 4 篇',
+    actions: ['采用新值', '保留旧值'],
+  },
+  {
+    id: 'audit-4',
+    title: '校友关系低置信度',
+    status: '待审核',
+    summary: '同导师关系缺少学籍交叉验证',
+    actions: ['通过', '驳回'],
+  },
+  {
+    id: 'audit-5',
+    title: '产业链事件共现',
+    status: '已通过',
+    summary: 'TOP-N 事件与专家节点共现已确认',
+    actions: ['查看详情'],
+  },
+])
+
+async function runWithLoading(message: string, action?: () => void) {
+  isActionLoading.value = true
+  await new Promise((resolve) => window.setTimeout(resolve, 420))
+  action?.()
+  showToast(message)
+  isActionLoading.value = false
+}
+
+function buildNodeDetail(node: GraphNodeData): DetailModalPayload {
+  return {
+    title: node.label,
+    entityType: node.entityType,
+    relations: node.relations,
+    confidence: node.confidence.toFixed(2),
+    updatedAt: '2026-07-06 10:30',
+    evidence: node.evidence.slice(0, 3),
+  }
+}
+
+function openNodeDetail(node: GraphNodeData) {
+  selectedGraphNodeId.value = node.id
+  detailModalPayload.value = buildNodeDetail(node)
+  detailModalOpen.value = true
+}
+
+function handleQuery() {
+  void runWithLoading(`查询完成：${selectedQueryType.value} / ${queryKeyword.value}`, () => {
+    queryApplied.value = true
+    selectedGraphNodeId.value = 'core'
+  })
+}
+
+function handleStartTask() {
+  void runWithLoading('处理任务已启动，可在执行过程追踪中查看进度')
+}
+
+function handleExecuteService() {
+  void runWithLoading(`${activeService.value.title} 调用成功，已刷新图谱结果`, () => {
+    serviceGraphTick.value += 1
+    selectedGraphNodeId.value = 'core'
+  })
+}
+
+function handleCopyEndpoint() {
+  void navigator.clipboard.writeText(`${activeService.value.method} ${activeService.value.endpoint}`)
+  showToast('接口信息已复制到剪贴板', 'info')
+}
+
+function handleBuildSearch() {
+  showToast(`已筛选 ${filteredEntityRows.value.length} 条${activeBuildTab.value}记录`, 'info')
+}
+
+function openConstructionModal(action: ConstructionActionKey) {
+  activeConstructionAction.value = action
+  constructionModalOpen.value = true
+}
+
+function closeConstructionModal() {
+  constructionModalOpen.value = false
+}
+
+function handleConstructionSuccess(title: string) {
+  constructionModalOpen.value = false
+  showToast(`${title}已完成`)
+}
+
+function handleAuditAction(itemTitle: string, action: string) {
+  showToast(`${itemTitle}：${action}已提交`)
+}
+
+function handleRowDetail(name: string) {
+  detailModalPayload.value = {
+    title: name,
+    entityType: activeBuildTab.value === 'entity' ? '图谱对象' : '治理对象',
+    relations: '待关联关系 2',
+    confidence: '0.86',
+    updatedAt: '2026-07-06 10:30',
+    evidence: ['记录来自最新增量批次 KG-INC-20260706-01。', '审核通过后将写入图谱。'],
+  }
+  detailModalOpen.value = true
+}
+
+function handleOverviewTaskDetail(batch: string) {
+  detailModalPayload.value = {
+    title: batch,
+    entityType: '任务批次',
+    relations: '6 个阶段',
+    confidence: '0.91',
+    updatedAt: '2026-07-06 10:30',
+    evidence: ['覆盖接入、清洗、抽取、消歧、审核、入库全链路。', '可在 Scheduler TraceLog 查看阶段耗时。'],
+  }
+  detailModalOpen.value = true
+}
+
+watch(activeServiceKey, () => {
+  selectedGraphNodeId.value = 'core'
+})
+
+watch(activeBuildTab, () => {
+  buildSearchKeyword.value = ''
+  buildStatusFilter.value = '全部'
+})
+
 const pageMeta = computed(() => {
-  const map: Record<PlatformTab, { eyebrow: string; title: string; desc: string; statLabel: string; statValue: string; statHint: string }> = {
+  const map: Record<PlatformTab, { title: string; subtitle: string; statLabel?: string; statValue?: string }> = {
     overview: {
-      eyebrow: '平台运行总览',
       title: '亿级科技知识图谱平台',
-      desc: '统一呈现数据接入、图谱构建、质量治理、增量更新和业务服务运行状态。',
+      subtitle: '统一呈现接入、构建、治理、查询与业务服务运行态',
       statLabel: '今日增量任务',
       statValue: '18',
-      statHint: '高置信度自动入库率 87.6%',
     },
     processing: {
-      eyebrow: '数据处理中心',
       title: '数据接入与处理任务',
-      desc: '配置数据源、处理规则和入库阈值，跟踪清洗、抽取、消歧、审核和入库执行过程。',
-      statLabel: '待处理批次',
-      statValue: '7',
-      statHint: '326 条数据进入人工审核',
+      subtitle: '配置数据源与阈值，跟踪清洗、抽取、消歧、审核与入库',
     },
     construction: {
-      eyebrow: '图谱构建中心',
       title: '实体、关系、属性与规则管理',
-      desc: '支持实体关系抽取、人工新增编辑、冲突处理、规则维护和图数据库增量写入。',
-      statLabel: '本次入库影响',
-      statValue: '13,406',
-      statHint: '实体、关系和属性更新合计',
+      subtitle: '支持人工新增、合并、驳回与规则回写',
     },
     query: {
-      eyebrow: '图谱查询中心',
-      title: '核心子图查询与证据追溯',
-      desc: '先输入查询条件，再返回核心实体网络、关键关系、结构化结果和证据链。',
-      statLabel: '当前命中关系',
-      statValue: '9',
-      statHint: '最高置信度 0.94',
+      title: '核心子图查询',
+      subtitle: '先输入条件，再返回子图、结构化结果与证据链',
     },
     service: {
-      eyebrow: '业务服务中心',
-      title: '9 大业务服务统一调用',
-      desc: '通过统一参数配置和服务出口调用底层图谱能力，输出图谱结果、结构化结果和证据链。',
-      statLabel: '服务模块',
-      statValue: '9',
-      statHint: '统一窗口调用',
+      title: '9 大业务服务',
+      subtitle: '统一入口调用底层图谱能力，输出图谱与结构化结果',
     },
   }
   return map[activeTab.value]
@@ -349,28 +543,25 @@ const pageMeta = computed(() => {
 <template>
   <div class="platform-page">
     <header v-if="activeTab === 'overview'" class="platform-hero">
-      <div>
-        <p>{{ pageMeta.eyebrow }}</p>
+      <div class="platform-hero__main">
         <h1>{{ pageMeta.title }}</h1>
-        <span>{{ pageMeta.desc }}</span>
+        <p class="platform-hero__subtitle">{{ pageMeta.subtitle }}</p>
+      </div>
+      <div v-if="pageMeta.statLabel" class="platform-hero__stat">
+        <span>{{ pageMeta.statLabel }}</span>
+        <strong>{{ pageMeta.statValue }}</strong>
       </div>
       <div class="platform-hero__actions">
-        <button type="button">新建任务</button>
-        <button type="button">导出报告</button>
-      </div>
-      <div class="platform-hero__status">
-        <strong>{{ pageMeta.statLabel }}</strong>
-        <b>{{ pageMeta.statValue }}</b>
-        <span>{{ pageMeta.statHint }}</span>
+        <button type="button" :disabled="isActionLoading" @click="handleStartTask">新建任务</button>
+        <button type="button" @click="showToast('平台运行报告已导出', 'info')">导出报告</button>
       </div>
     </header>
 
     <header v-else class="platform-page-head">
       <div>
-        <p>{{ pageMeta.eyebrow }}</p>
         <h1>{{ pageMeta.title }}</h1>
+        <p>{{ pageMeta.subtitle }}</p>
       </div>
-      <span>{{ pageMeta.desc }}</span>
     </header>
 
     <main v-if="activeTab === 'overview'" class="platform-content platform-overview">
@@ -378,14 +569,14 @@ const pageMeta = computed(() => {
         <article v-for="item in metrics" :key="item.label" :class="['platform-metric', `is-${item.tone}`]">
           <span>{{ item.label }}</span>
           <strong>{{ item.value }}</strong>
-          <em>{{ item.trend }}</em>
+          <em>{{ item.hint }}</em>
         </article>
       </section>
 
       <section class="kg-panel platform-pipeline-panel">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">数据到图谱处理闭环</h2>
-          <span>建图 / 管图 / 更新图 / 查图 / 用图</span>
+          <span>近 24 小时</span>
         </div>
         <div class="platform-pipeline">
           <article v-for="item in pipeline" :key="item.name" class="platform-pipeline__step">
@@ -402,7 +593,9 @@ const pageMeta = computed(() => {
       <section class="kg-panel">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">最近任务执行状态</h2>
-          <button class="kg-button kg-button--secondary" type="button">查看任务</button>
+          <button class="kg-button kg-button--secondary" type="button" @click="handleOverviewTaskDetail(taskRows[0]?.batch ?? '任务批次')">
+            查看任务
+          </button>
         </div>
         <table class="platform-table">
           <thead>
@@ -418,7 +611,11 @@ const pageMeta = computed(() => {
           </thead>
           <tbody>
             <tr v-for="row in taskRows" :key="row.batch">
-              <td>{{ row.batch }}</td>
+              <td>
+                <button class="platform-link-button" type="button" @click="handleOverviewTaskDetail(row.batch)">
+                  {{ row.batch }}
+                </button>
+              </td>
               <td>{{ row.source }}</td>
               <td>{{ row.stage }}</td>
               <td><span class="platform-status">{{ row.status }}</span></td>
@@ -434,7 +631,6 @@ const pageMeta = computed(() => {
         <div class="kg-panel platform-trend">
           <div class="kg-panel__header">
             <h2 class="kg-panel__title">业务服务调用趋势</h2>
-            <span>近 24 小时</span>
           </div>
           <div class="platform-trend__bars">
             <div v-for="item in serviceTrend" :key="item.label">
@@ -448,7 +644,6 @@ const pageMeta = computed(() => {
         <div class="kg-panel platform-health">
           <div class="kg-panel__header">
             <h2 class="kg-panel__title">数据源健康状态</h2>
-            <span>实时同步</span>
           </div>
           <div class="platform-health__list">
             <article v-for="item in sourceHealth" :key="item.name" :class="{ 'is-warning': item.status === '告警' }">
@@ -463,7 +658,6 @@ const pageMeta = computed(() => {
         <div class="kg-panel platform-quality">
           <div class="kg-panel__header">
             <h2 class="kg-panel__title">图谱质量治理</h2>
-            <span>质量闸口</span>
           </div>
           <div class="platform-quality__list">
             <article v-for="row in qualityRows" :key="row.label">
@@ -479,7 +673,8 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-config">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">处理任务配置</h2>
-          <button class="kg-button" type="button">启动任务</button>
+          <span>配置后启动，可在下方追踪各阶段进度</span>
+          <button class="kg-button" type="button" :disabled="isActionLoading" @click="handleStartTask">启动任务</button>
         </div>
         <div class="platform-form-grid">
           <label>
@@ -516,7 +711,6 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-discovery">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">增量发现结果</h2>
-          <span>新增实体 / 新增关系 / 新增属性 / 潜在隐藏关系 / 冲突数据</span>
         </div>
         <div class="platform-discovery__grid">
           <article v-for="row in discoveryRows" :key="row.type">
@@ -524,16 +718,14 @@ const pageMeta = computed(() => {
               <span>{{ row.type }}</span>
               <strong>{{ row.count }}</strong>
             </div>
-            <p>{{ row.sample }}</p>
-            <em>{{ row.strategy }}</em>
+            <p>{{ row.desc }}</p>
           </article>
         </div>
       </section>
 
       <section class="kg-panel platform-gates">
         <div class="kg-panel__header">
-          <h2 class="kg-panel__title">质量闸口与流转策略</h2>
-          <span>自动处理与人工协同</span>
+          <h2 class="kg-panel__title">质量闸口</h2>
         </div>
         <div class="platform-gates__grid">
           <article v-for="gate in qualityGates" :key="gate.label">
@@ -547,7 +739,6 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-processing-flow">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">执行过程追踪</h2>
-          <span>机器初筛 + 人工审核 + 规则沉淀</span>
         </div>
         <div class="platform-timeline">
           <article v-for="item in pipeline" :key="item.name">
@@ -564,18 +755,25 @@ const pageMeta = computed(() => {
       <aside class="kg-panel platform-review">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">人工审核队列</h2>
-          <span>326 条</span>
+          <span>{{ auditQueue.filter((item) => item.status === '待审核').length }} 条</span>
         </div>
         <div class="platform-review__body">
-          <article>
-            <strong>实体重复疑似冲突</strong>
-            <p>“张明远”与“Zhang Mingyuan”匹配度 0.82，低于自动合并阈值。</p>
-            <div><button>确认合并</button><button>保留新实体</button></div>
-          </article>
-          <article>
-            <strong>关系证据不足</strong>
-            <p>企业合作关系仅来自单一网页，需要人工确认角色和时间。</p>
-            <div><button>通过</button><button>退回规则</button></div>
+          <article v-for="item in auditQueue" :key="item.id">
+            <div class="platform-review__title">
+              <strong>{{ item.title }}</strong>
+              <span :class="['platform-review__tag', `is-${item.status}`]">{{ item.status }}</span>
+            </div>
+            <p>{{ item.summary }}</p>
+            <div>
+              <button
+                v-for="action in item.actions"
+                :key="action"
+                type="button"
+                @click="handleAuditAction(item.title, action)"
+              >
+                {{ action }}
+              </button>
+            </div>
           </article>
         </div>
       </aside>
@@ -594,23 +792,23 @@ const pageMeta = computed(() => {
         </div>
 
         <div class="platform-manual-toolbar">
-          <button type="button">新增实体</button>
-          <button type="button">新增关系</button>
-          <button type="button">新增属性</button>
-          <button type="button">批量审核</button>
-          <button type="button">导入规则</button>
-          <span>支持查询、新增、编辑、删除、合并、驳回、回滚，并将人工结果回写图谱。</span>
+          <button type="button" @click="openConstructionModal('entity')">新增实体</button>
+          <button type="button" @click="openConstructionModal('relation')">新增关系</button>
+          <button type="button" @click="openConstructionModal('property')">新增属性</button>
+          <button type="button" @click="openConstructionModal('batch-audit')">批量审核</button>
+          <button type="button" @click="openConstructionModal('rule-import')">导入规则</button>
+          <span>人工维护与低置信度审核，变更即时写入图谱</span>
         </div>
 
         <div class="platform-manage-filter">
           <label>
             <span>对象检索</span>
-            <input value="张明远 / 华南智能芯片" />
+            <input v-model="buildSearchKeyword" placeholder="输入实体 / 关系 / 属性关键词" />
           </label>
           <label>
             <span>数据状态</span>
-            <select>
-              <option>全部状态</option>
+            <select v-model="buildStatusFilter">
+              <option>全部</option>
               <option>待审核</option>
               <option>自动入库</option>
               <option>冲突数据</option>
@@ -623,17 +821,20 @@ const pageMeta = computed(() => {
               <option>KG-INC-20260706-02</option>
             </select>
           </label>
-          <button type="button">查询</button>
+          <button type="button" @click="handleBuildSearch">查询</button>
         </div>
 
         <table v-if="activeBuildTab === 'entity'" class="platform-table">
           <thead><tr><th>新识别实体</th><th>类型</th><th>候选匹配</th><th>相似度</th><th>建议操作</th><th>人工操作</th></tr></thead>
           <tbody>
-            <tr v-for="row in entityRows" :key="row.name">
+            <tr v-for="row in filteredEntityRows" :key="row.name">
               <td>{{ row.name }}</td><td>{{ row.type }}</td><td>{{ row.match }}</td><td>{{ row.score }}</td><td>{{ row.action }}</td>
               <td>
                 <div class="platform-row-actions">
-                  <button>查看</button><button>编辑</button><button>合并</button><button>删除</button>
+                  <button type="button" @click="handleRowDetail(row.name)">查看</button>
+                  <button type="button" @click="showToast(`${row.name} 已进入编辑态`, 'info')">编辑</button>
+                  <button type="button" @click="handleAuditAction(row.name, '合并')">合并</button>
+                  <button type="button" @click="showToast(`${row.name} 已驳回`, 'warning')">删除</button>
                 </div>
               </td>
             </tr>
@@ -647,7 +848,10 @@ const pageMeta = computed(() => {
               <td>{{ row.source }}</td><td>{{ row.target }}</td><td>{{ row.relation }}</td><td>{{ row.evidence }}</td><td>{{ row.confidence }}</td><td>{{ row.status }}</td>
               <td>
                 <div class="platform-row-actions">
-                  <button>查看</button><button>编辑</button><button>审核</button><button>删除</button>
+                  <button type="button" @click="handleRowDetail(`${row.source}-${row.target}`)">查看</button>
+                  <button type="button" @click="showToast('关系记录已进入编辑态', 'info')">编辑</button>
+                  <button type="button" @click="handleAuditAction(`${row.source}-${row.target}`, '审核')">审核</button>
+                  <button type="button" @click="showToast('关系记录已删除', 'warning')">删除</button>
                 </div>
               </td>
             </tr>
@@ -661,7 +865,10 @@ const pageMeta = computed(() => {
               <td>{{ row.object }}</td><td>{{ row.property }}</td><td>{{ row.oldValue }}</td><td>{{ row.newValue }}</td><td>{{ row.rule }}</td>
               <td>
                 <div class="platform-row-actions">
-                  <button>查看</button><button>编辑</button><button>回滚</button><button>删除</button>
+                  <button type="button" @click="handleRowDetail(row.object)">查看</button>
+                  <button type="button" @click="showToast('属性记录已进入编辑态', 'info')">编辑</button>
+                  <button type="button" @click="showToast(`${row.property} 已回滚至 ${row.oldValue}`, 'info')">回滚</button>
+                  <button type="button" @click="showToast('属性记录已删除', 'warning')">删除</button>
                 </div>
               </td>
             </tr>
@@ -675,45 +882,27 @@ const pageMeta = computed(() => {
               <td>{{ row.name }}</td><td>{{ row.type }}</td><td>{{ row.method }}</td><td>{{ row.threshold }}</td><td>{{ row.status }}</td>
               <td>
                 <div class="platform-row-actions">
-                  <button>查看</button><button>编辑</button><button>停用</button><button>删除</button>
+                  <button type="button" @click="handleRowDetail(row.name)">查看</button>
+                  <button type="button" @click="showToast('规则配置已进入编辑态', 'info')">编辑</button>
+                  <button type="button" @click="showToast(`${row.name} 已停用`, 'warning')">停用</button>
+                  <button type="button" @click="showToast('规则已删除', 'warning')">删除</button>
                 </div>
               </td>
             </tr>
           </tbody>
         </table>
-        <div class="platform-build-footer">
-          <span>当前视图共 3 条记录</span>
-          <span>最近同步：2026-07-06 10:30</span>
-          <span>审核策略：自动入库 + 人工确认</span>
-        </div>
       </section>
 
       <aside class="kg-panel platform-graph-summary">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">本次入库影响</h2>
         </div>
+        <p class="platform-graph-summary__hint">最近一次批量入库对图谱规模的增量影响</p>
         <div class="platform-impact">
           <div><span>新增实体</span><strong>3,261</strong></div>
           <div><span>新增关系</span><strong>8,942</strong></div>
           <div><span>属性更新</span><strong>1,203</strong></div>
           <div><span>冲突待审</span><strong>326</strong></div>
-        </div>
-        <div class="platform-rule-note">
-          <strong>规则沉淀</strong>
-          <p>人工审核结果会回写为消歧样本、关系验证样本和阈值调整依据，支撑后续增量处理。</p>
-        </div>
-        <div class="platform-rule-note platform-rule-note--manual">
-          <strong>人工维护策略</strong>
-          <p>管理员可手动新增实体、关系和属性；对错误抽取结果执行删除、驳回或回滚；对冲突数据进行合并、拆分和来源标注。</p>
-        </div>
-        <div class="platform-governance-flow">
-          <strong>治理流转</strong>
-          <ol>
-            <li><span>01</span><p>机器抽取候选实体、关系和属性</p></li>
-            <li><span>02</span><p>图谱比对完成消歧、合并和冲突识别</p></li>
-            <li><span>03</span><p>高置信度自动入库，异常数据进入审核</p></li>
-            <li><span>04</span><p>审核结果回写图谱并沉淀为规则样本</p></li>
-          </ol>
         </div>
       </aside>
     </main>
@@ -722,7 +911,7 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-query-form">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">统一图查询入口</h2>
-          <button class="kg-button" type="button">查询</button>
+          <button class="kg-button" type="button" :disabled="isActionLoading" @click="handleQuery">查询</button>
         </div>
         <div class="platform-form-grid">
           <label>
@@ -733,17 +922,17 @@ const pageMeta = computed(() => {
           </label>
           <label>
             <span>关键词</span>
-            <input value="张明远" />
+            <input v-model="queryKeyword" />
           </label>
           <label>
             <span>关系类型</span>
-            <select>
+            <select v-model="queryRelationFilter">
               <option v-for="item in relationFilters" :key="item">{{ item }}</option>
             </select>
           </label>
           <label>
             <span>置信度</span>
-            <input value=">= 0.75" />
+            <input v-model="queryConfidence" />
           </label>
         </div>
       </section>
@@ -751,72 +940,35 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-query-graph">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">核心子图展示</h2>
-          <span>{{ selectedQueryType }} / 关键关系优先</span>
+          <span>{{ querySummary }}</span>
         </div>
-        <svg class="kg-graph-canvas platform-svg" viewBox="0 0 760 430" role="img" aria-label="图谱查询结果">
-          <defs>
-            <marker id="platform-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-              <path d="M0,0 L7,3.5 L0,7 Z" fill="#aab4c3" />
-            </marker>
-          </defs>
-          <g class="platform-network-lines">
-            <line x1="382" y1="214" x2="188" y2="112" />
-            <line x1="382" y1="214" x2="570" y2="102" />
-            <line x1="382" y1="214" x2="182" y2="318" />
-            <line x1="382" y1="214" x2="592" y2="316" />
-            <line x1="188" y1="112" x2="116" y2="192" />
-            <line x1="188" y1="112" x2="284" y2="92" />
-            <line x1="570" y1="102" x2="650" y2="178" />
-            <line x1="570" y1="102" x2="458" y2="74" />
-            <line x1="182" y1="318" x2="104" y2="258" />
-            <line x1="182" y1="318" x2="302" y2="344" />
-            <line x1="592" y1="316" x2="686" y2="254" />
-            <line x1="592" y1="316" x2="498" y2="360" />
-            <line x1="302" y1="344" x2="498" y2="360" />
-            <line x1="284" y1="92" x2="458" y2="74" />
-          </g>
-          <line class="platform-network-line is-primary" x1="382" y1="214" x2="188" y2="112" />
-          <line class="platform-network-line is-green" x1="382" y1="214" x2="570" y2="102" />
-          <line class="platform-network-line is-orange" x1="382" y1="214" x2="182" y2="318" />
-          <line class="platform-network-line is-purple" x1="382" y1="214" x2="592" y2="316" />
-          <text class="platform-edge-label" x="278" y="150">论文合作</text>
-          <text class="platform-edge-label" x="484" y="152">同事关系</text>
-          <text class="platform-edge-label" x="276" y="280">企业关联</text>
-          <text class="platform-edge-label" x="500" y="282">成果证据</text>
-          <g class="platform-node platform-node--main" transform="translate(382 214)">
-            <circle r="34" /><text>张明远</text>
-          </g>
-          <g class="platform-node is-expert" transform="translate(188 112)"><circle r="28" /><text>李佳宁</text></g>
-          <g class="platform-node is-org" transform="translate(570 102)"><circle r="28" /><text>清华大学</text></g>
-          <g class="platform-node is-company" transform="translate(182 318)"><circle r="30" /><text>华南智能芯片</text></g>
-          <g class="platform-node is-paper" transform="translate(592 316)"><circle r="30" /><text>先进计算论文</text></g>
-          <g class="platform-node is-topic" transform="translate(116 192)"><circle r="20" /><text>生物医药</text></g>
-          <g class="platform-node is-project" transform="translate(284 92)"><circle r="18" /><text>项目18</text></g>
-          <g class="platform-node is-topic" transform="translate(650 178)"><circle r="20" /><text>人工智能</text></g>
-          <g class="platform-node is-paper" transform="translate(458 74)"><circle r="18" /><text>论文006</text></g>
-          <g class="platform-node is-project" transform="translate(104 258)"><circle r="18" /><text>技术31</text></g>
-          <g class="platform-node is-company" transform="translate(302 344)"><circle r="20" /><text>腾讯</text></g>
-          <g class="platform-node is-topic" transform="translate(686 254)"><circle r="18" /><text>新能源</text></g>
-          <g class="platform-node is-project" transform="translate(498 360)"><circle r="18" /><text>项目03</text></g>
-        </svg>
+        <KgGraphCanvas
+          :nodes="queryGraphPreset.nodes"
+          :edges="queryGraphPreset.edges"
+          :active-categories="queryActiveCategories"
+          :selected-node-id="selectedGraphNodeId"
+          aria-label="图谱查询结果"
+          @select-node="openNodeDetail"
+        />
       </section>
 
       <aside class="kg-panel platform-detail">
         <div class="kg-panel__header">
-          <h2 class="kg-panel__title">结构化结果与证据链</h2>
+          <h2 class="kg-panel__title">结构化结果</h2>
         </div>
         <div class="platform-detail__body">
           <dl>
-            <div><dt>核心实体</dt><dd>张明远 / 科技专家</dd></div>
-            <div><dt>命中关系</dt><dd>论文合作 4、同事 3、企业关联 2</dd></div>
-            <div><dt>最高置信度</dt><dd>0.94</dd></div>
-            <div><dt>最近更新</dt><dd>2026-07-06 10:30</dd></div>
+            <div><dt>核心实体</dt><dd>{{ selectedQueryNode.label }} / {{ selectedQueryNode.entityType }}</dd></div>
+            <div><dt>命中关系</dt><dd>{{ selectedQueryNode.relations }}</dd></div>
+            <div><dt>置信度</dt><dd>{{ selectedQueryNode.confidence.toFixed(2) }}</dd></div>
+            <div><dt>更新时间</dt><dd>2026-07-06 10:30</dd></div>
           </dl>
-          <ul>
-            <li>共同发表论文 4 篇，作者列表和单位信息一致。</li>
-            <li>任职时间存在重叠，机构层级匹配到同一实验室。</li>
-            <li>企业合作关系来自项目公告和工商角色数据。</li>
-          </ul>
+          <div v-if="selectedQueryNode.evidence.length" class="platform-evidence">
+            <strong>证据链</strong>
+            <ul>
+              <li v-for="(line, index) in selectedQueryNode.evidence.slice(0, 3)" :key="index">{{ line }}</li>
+            </ul>
+          </div>
         </div>
       </aside>
     </main>
@@ -843,7 +995,7 @@ const pageMeta = computed(() => {
           </label>
           <template v-if="activeServiceMode === 'test'">
             <label v-for="field in activeService.requestFields.slice(0, 3)" :key="field.name">
-              <span>{{ field.description }}</span>
+              <span>{{ field.name }}</span>
               <input :value="activeService.requestExample[field.name] ?? ''" />
             </label>
           </template>
@@ -858,8 +1010,10 @@ const pageMeta = computed(() => {
             </label>
           </template>
           <div class="platform-service-console__actions">
-            <button v-if="activeServiceMode === 'test'" type="button">执行调用</button>
-            <button v-else type="button">复制接口</button>
+            <button v-if="activeServiceMode === 'test'" type="button" :disabled="isActionLoading" @click="handleExecuteService">
+              执行调用
+            </button>
+            <button v-else type="button" @click="handleCopyEndpoint">复制接口</button>
           </div>
         </div>
       </section>
@@ -870,47 +1024,14 @@ const pageMeta = computed(() => {
           <h2 class="kg-panel__title">图谱结果</h2>
           <span>{{ activeService.title }}</span>
         </div>
-        <svg class="kg-graph-canvas platform-svg" viewBox="0 0 760 430" role="img" aria-label="业务服务图谱">
-          <defs>
-            <marker id="service-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-              <path d="M0,0 L7,3.5 L0,7 Z" fill="#aab4c3" />
-            </marker>
-          </defs>
-          <g class="platform-network-lines platform-network-lines--service">
-            <line x1="382" y1="214" x2="180" y2="118" />
-            <line x1="382" y1="214" x2="578" y2="118" />
-            <line x1="382" y1="214" x2="194" y2="316" />
-            <line x1="382" y1="214" x2="586" y2="316" />
-            <line x1="180" y1="118" x2="96" y2="208" />
-            <line x1="180" y1="118" x2="286" y2="84" />
-            <line x1="578" y1="118" x2="674" y2="190" />
-            <line x1="578" y1="118" x2="476" y2="76" />
-            <line x1="194" y1="316" x2="312" y2="356" />
-            <line x1="586" y1="316" x2="684" y2="270" />
-            <line x1="312" y1="356" x2="506" y2="356" />
-            <line x1="286" y1="84" x2="476" y2="76" />
-          </g>
-          <line class="platform-network-line is-primary" x1="382" y1="214" x2="180" y2="118" />
-          <line class="platform-network-line is-green" x1="382" y1="214" x2="578" y2="118" />
-          <line class="platform-network-line is-orange" x1="382" y1="214" x2="194" y2="316" />
-          <line class="platform-network-line is-purple" x1="382" y1="214" x2="586" y2="316" />
-          <text class="platform-edge-label" x="274" y="150">直接关系</text>
-          <text class="platform-edge-label" x="490" y="152">机构关联</text>
-          <text class="platform-edge-label" x="282" y="282">合作成果</text>
-          <text class="platform-edge-label" x="500" y="282">事件关联</text>
-          <g class="platform-node platform-node--main" transform="translate(382 214)"><circle r="34" /><text>张明远</text></g>
-          <g class="platform-node is-expert" transform="translate(180 118)"><circle r="28" /><text>李佳宁</text></g>
-          <g class="platform-node is-org" transform="translate(578 118)"><circle r="28" /><text>清华大学</text></g>
-          <g class="platform-node is-paper" transform="translate(194 316)"><circle r="30" /><text>论文成果</text></g>
-          <g class="platform-node is-topic" transform="translate(586 316)"><circle r="30" /><text>产业事件</text></g>
-          <g class="platform-node is-company" transform="translate(96 208)"><circle r="20" /><text>科技企业</text></g>
-          <g class="platform-node is-project" transform="translate(286 84)"><circle r="18" /><text>项目18</text></g>
-          <g class="platform-node is-topic" transform="translate(674 190)"><circle r="20" /><text>人工智能</text></g>
-          <g class="platform-node is-paper" transform="translate(476 76)"><circle r="18" /><text>论文006</text></g>
-          <g class="platform-node is-company" transform="translate(312 356)"><circle r="20" /><text>腾讯</text></g>
-          <g class="platform-node is-project" transform="translate(684 270)"><circle r="18" /><text>技术31</text></g>
-          <g class="platform-node is-topic" transform="translate(506 356)"><circle r="18" /><text>新能源</text></g>
-        </svg>
+        <KgGraphCanvas
+          :key="activeServiceKey"
+          :nodes="serviceGraph.nodes"
+          :edges="serviceGraph.edges"
+          :selected-node-id="selectedGraphNodeId"
+          :aria-label="`${activeService.title}图谱结果`"
+          @select-node="openNodeDetail"
+        />
         </section>
 
         <aside class="kg-panel platform-service-result">
@@ -923,20 +1044,16 @@ const pageMeta = computed(() => {
               <strong>{{ row.value }}</strong>
             </div>
           </div>
+          <dl class="platform-service-info">
+            <div><dt>核心对象</dt><dd>{{ selectedServiceNode.label }} / {{ selectedServiceNode.entityType }}</dd></div>
+            <div><dt>置信度</dt><dd>{{ selectedServiceNode.confidence.toFixed(2) }}</dd></div>
+            <div><dt>更新时间</dt><dd>2026-07-06 10:30</dd></div>
+          </dl>
           <div class="platform-evidence">
-            <strong>证据链</strong>
+            <strong>证据摘要</strong>
             <ul>
-              <li v-for="item in activeService.evidence" :key="item">{{ item }}</li>
+              <li v-for="(line, index) in activeService.evidence.slice(0, 2)" :key="index">{{ line }}</li>
             </ul>
-          </div>
-          <div class="platform-service-info">
-            <strong>返回具体信息</strong>
-            <dl>
-              <div><dt>核心对象</dt><dd>张明远 / 科技专家</dd></div>
-              <div><dt>命中服务</dt><dd>{{ activeService.title }}</dd></div>
-              <div><dt>置信度</dt><dd>0.94</dd></div>
-              <div><dt>更新时间</dt><dd>2026-07-06 10:30</dd></div>
-            </dl>
           </div>
         </aside>
       </template>
@@ -1003,6 +1120,19 @@ print(response.json())</pre>
         </section>
       </template>
     </main>
+
+    <KgDetailModal
+      :open="detailModalOpen"
+      :payload="detailModalPayload"
+      @close="detailModalOpen = false"
+    />
+
+    <ConstructionActionModal
+      :open="constructionModalOpen"
+      :action="activeConstructionAction"
+      @close="closeConstructionModal"
+      @success="handleConstructionSuccess"
+    />
   </div>
 </template>
 
@@ -1023,8 +1153,8 @@ print(response.json())</pre>
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  min-height: 98px;
-  padding: 20px 24px;
+  min-height: 72px;
+  padding: 16px 24px;
   border: 1px solid rgba(132, 178, 246, 0.86);
   border-radius: 12px;
   background:
@@ -1051,42 +1181,47 @@ print(response.json())</pre>
   position: relative;
 }
 
-.platform-hero p,
-.platform-hero h1,
-.platform-hero span {
-  margin: 0;
-}
-
-.platform-hero p {
-  color: #165dff;
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .platform-hero h1 {
-  margin-top: 4px;
+  margin: 0;
   color: #10264c;
-  font-size: 28px;
-  line-height: 38px;
+  font-size: 24px;
+  line-height: 32px;
   font-weight: 600;
 }
 
-.platform-hero span {
-  display: block;
-  margin-top: 4px;
-  color: #526987;
+.platform-hero__main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.platform-hero__subtitle {
+  margin: 0;
+  color: #4b6288;
   font-size: 13px;
   line-height: 20px;
 }
 
-.platform-hero__status {
-  flex: 0 0 180px;
+.platform-hero__stat {
   display: grid;
   gap: 2px;
-  padding: 10px 14px;
-  border-left: 1px solid rgba(103, 160, 242, 0.62);
-  border-radius: 0;
-  background: transparent;
+  min-width: 96px;
+  padding: 8px 12px;
+  border: 1px solid rgba(132, 178, 246, 0.72);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  text-align: center;
+}
+
+.platform-hero__stat span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.platform-hero__stat strong {
+  color: var(--primary);
+  font-size: 22px;
+  line-height: 28px;
 }
 
 .platform-hero__actions {
@@ -1094,7 +1229,6 @@ print(response.json())</pre>
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
 }
 
 .platform-hero__actions button {
@@ -1115,56 +1249,26 @@ print(response.json())</pre>
   box-shadow: 0 8px 18px rgba(22, 93, 255, 0.22);
 }
 
-.platform-hero__status strong,
-.platform-hero__status span {
-  color: #526987;
-  font-size: 13px;
-}
-
-.platform-hero__status b {
-  color: #165dff;
-  font-size: 32px;
-  line-height: 38px;
-}
-
 .platform-page-head {
   display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 18px;
+  align-items: center;
   min-height: 36px;
   padding: 0 2px 2px;
 }
 
-.platform-page-head p,
-.platform-page-head h1,
-.platform-page-head span {
-  margin: 0;
-}
-
-.platform-page-head p {
-  color: #165dff;
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: 600;
-}
-
 .platform-page-head h1 {
+  margin: 0;
   color: #10264c;
   font-size: 20px;
   line-height: 28px;
   font-weight: 600;
 }
 
-.platform-page-head > span {
-  max-width: 720px;
-  overflow: hidden;
-  color: #526987;
-  font-size: 12px;
-  line-height: 18px;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.platform-page-head p {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .platform-content {
@@ -1190,7 +1294,7 @@ print(response.json())</pre>
   overflow: hidden;
   display: grid;
   gap: 6px;
-  min-height: 92px;
+  min-height: 72px;
   padding: 14px;
   border: 1px solid #bed8ff;
   border-radius: 8px;
@@ -1212,12 +1316,10 @@ print(response.json())</pre>
   content: "";
 }
 
-.platform-metric span,
-.platform-metric em {
+.platform-metric span {
   overflow: hidden;
   color: var(--text-secondary);
   font-size: 13px;
-  font-style: normal;
   line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1228,6 +1330,16 @@ print(response.json())</pre>
   line-height: 28px;
 }
 
+.platform-metric em {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .platform-metric.is-blue strong { color: #165dff; }
 .platform-metric.is-green strong { color: #00a870; }
 .platform-metric.is-purple strong { color: #722ed1; }
@@ -1236,7 +1348,8 @@ print(response.json())</pre>
 .platform-pipeline-panel .kg-panel__header span,
 .platform-query-graph .kg-panel__header span,
 .platform-service-graph .kg-panel__header span,
-.platform-processing-flow .kg-panel__header span {
+.platform-processing-flow .kg-panel__header span,
+.platform-config .kg-panel__header span {
   color: var(--text-tertiary);
   font-size: 13px;
 }
@@ -1251,9 +1364,7 @@ print(response.json())</pre>
 .platform-pipeline__step {
   position: relative;
   display: grid;
-  align-content: start;
   gap: 8px;
-  min-height: 128px;
   padding: 12px;
   border: 1px solid #e0ebfb;
   border-radius: 8px;
@@ -1303,9 +1414,8 @@ print(response.json())</pre>
 }
 
 .platform-pipeline__step em {
-  align-self: end;
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: 16px;
   font-style: normal;
   font-weight: 600;
 }
@@ -1513,11 +1623,6 @@ print(response.json())</pre>
   cursor: pointer;
 }
 
-.platform-discovery .kg-panel__header span {
-  color: var(--text-tertiary);
-  font-size: 13px;
-}
-
 .platform-discovery__grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1527,9 +1632,7 @@ print(response.json())</pre>
 
 .platform-discovery__grid article {
   display: grid;
-  align-content: start;
   gap: 8px;
-  min-height: 116px;
   padding: 10px 12px;
   border: 1px solid #e2ebf8;
   border-radius: 8px;
@@ -1554,25 +1657,11 @@ print(response.json())</pre>
   line-height: 24px;
 }
 
-.platform-discovery__grid p,
-.platform-discovery__grid em {
+.platform-discovery__grid p {
   margin: 0;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-style: normal;
-  line-height: 18px;
-}
-
-.platform-discovery__grid em {
   color: var(--text-secondary);
-}
-
-.platform-gates .kg-panel__header span,
-.platform-trend .kg-panel__header span,
-.platform-health .kg-panel__header span,
-.platform-quality .kg-panel__header span {
-  color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .platform-gates__grid {
@@ -1591,8 +1680,7 @@ print(response.json())</pre>
   background: linear-gradient(135deg, #f8fbff, #fff);
 }
 
-.platform-gates__grid span,
-.platform-gates__grid p {
+.platform-gates__grid span {
   margin: 0;
   color: var(--text-secondary);
   font-size: 13px;
@@ -1603,6 +1691,13 @@ print(response.json())</pre>
   color: var(--primary);
   font-size: 24px;
   line-height: 28px;
+}
+
+.platform-gates__grid p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .platform-overview-grid {
@@ -1664,7 +1759,7 @@ print(response.json())</pre>
 
 .platform-health__list article {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 52px 76px 52px;
+  grid-template-columns: minmax(0, 1fr) 52px 72px 52px;
   align-items: center;
   gap: 8px;
   min-height: 34px;
@@ -1686,16 +1781,17 @@ print(response.json())</pre>
   white-space: nowrap;
 }
 
+.platform-health__list em {
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
 .platform-health__list span {
   color: #00a870;
 }
 
 .platform-health__list article.is-warning span {
   color: #ff7d00;
-}
-
-.platform-health__list em {
-  color: var(--text-tertiary);
 }
 
 .platform-health__list b {
@@ -1761,6 +1857,13 @@ print(response.json())</pre>
   padding-bottom: 14px;
 }
 
+.platform-graph-summary__hint {
+  margin: -4px 14px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .platform-build-footer {
   margin-top: auto;
 }
@@ -1801,6 +1904,8 @@ print(response.json())</pre>
 
 .platform-manual-toolbar button {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
   height: 32px;
   padding: 0 14px;
   border: 1px solid #bdd7ff;
@@ -1808,6 +1913,7 @@ print(response.json())</pre>
   background: #fff;
   color: var(--primary);
   font-size: 13px;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -2306,12 +2412,18 @@ print(response.json())</pre>
 
 .platform-evidence {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   margin: 0 14px 14px;
   padding: 12px;
   border: 1px solid #e2ebf8;
   border-radius: 8px;
   background: #fff;
+}
+
+.platform-evidence strong {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .platform-service-info {
@@ -2516,5 +2628,71 @@ print(response.json())</pre>
   .platform-pipeline__step:not(:last-child)::after {
     display: none;
   }
+}
+
+@media (max-width: 1280px) {
+  .platform-query,
+  .platform-service:not(.platform-service--api) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+
+  .platform-construction,
+  .platform-processing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .platform-graph-summary,
+  .platform-detail,
+  .platform-service-result,
+  .platform-review {
+    max-height: 360px;
+  }
+
+  .platform-service-console__body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.platform-link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.platform-review__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.platform-review__tag {
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 22px;
+}
+
+.platform-review__tag.is-待审核 {
+  color: var(--warning);
+  background: var(--warning-subtle);
+}
+
+.platform-review__tag.is-处理中 {
+  color: var(--primary);
+  background: var(--primary-subtle);
+}
+
+.platform-review__tag.is-已通过 {
+  color: var(--success);
+  background: var(--success-subtle);
 }
 </style>

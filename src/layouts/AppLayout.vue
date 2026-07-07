@@ -8,10 +8,12 @@ import iconSidebarArrow from '../assets/icons/icon-sidebar-arrow.svg'
 import navFlow from '../assets/icons/nav-flow.svg'
 import navGraph from '../assets/icons/nav-graph.svg'
 import navReasoning from '../assets/icons/nav-reasoning.svg'
+import { useAppStore } from '../stores/app'
 import avatarBen from '../assets/images/avatar-ben.png'
 import logoKg from '../assets/images/logo-kg.png'
 
 const route = useRoute()
+const appStore = useAppStore()
 const pageTitle = computed(() => String(route.meta.title ?? '亿级知识图谱'))
 const routeError = ref('')
 
@@ -23,49 +25,56 @@ onErrorCaptured((error) => {
 
 <template>
   <div class="app-viewport">
-    <div class="app-shell">
+    <div class="app-shell" :class="{ 'is-collapsed': appStore.collapsed }">
         <aside class="app-sidebar">
           <div class="app-brand">
             <img class="app-brand__logo" :src="logoKg" alt="知识图谱平台" />
-            <div class="app-brand__name">知识图谱平台</div>
-            <img class="app-brand__menu" :src="iconMenuCollapse" alt="" aria-hidden="true" />
+            <div v-if="!appStore.collapsed" class="app-brand__name">知识图谱平台</div>
+            <button
+              class="app-brand__menu"
+              type="button"
+              :aria-label="appStore.collapsed ? '展开导航' : '收起导航'"
+              @click="appStore.toggleCollapsed()"
+            >
+              <img :src="iconMenuCollapse" alt="" aria-hidden="true" />
+            </button>
           </div>
 
           <nav class="app-nav">
-            <div class="app-nav__group">平台能力</div>
-            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/overview">
+            <div v-if="!appStore.collapsed" class="app-nav__group">平台能力</div>
+            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/overview" :title="appStore.collapsed ? '平台总览' : undefined">
               <img class="app-nav__icon" :src="navFlow" alt="" aria-hidden="true" />
-              <span>平台总览</span>
-              <img class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
+              <span v-if="!appStore.collapsed">平台总览</span>
+              <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
             </RouterLink>
-            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/data-processing">
+            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/data-processing" :title="appStore.collapsed ? '数据处理' : undefined">
               <img class="app-nav__icon" :src="navGraph" alt="" aria-hidden="true" />
-              <span>数据处理</span>
-              <img class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
+              <span v-if="!appStore.collapsed">数据处理</span>
+              <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
             </RouterLink>
-            <div class="app-nav__group">图谱治理</div>
-            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/graph-construction">
+            <div v-if="!appStore.collapsed" class="app-nav__group">图谱治理</div>
+            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/graph-construction" :title="appStore.collapsed ? '图谱构建' : undefined">
               <img class="app-nav__icon" :src="navReasoning" alt="" aria-hidden="true" />
-              <span>图谱构建</span>
-              <img class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
+              <span v-if="!appStore.collapsed">图谱构建</span>
+              <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
             </RouterLink>
-            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/graph-query">
+            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/graph-query" :title="appStore.collapsed ? '图谱查询' : undefined">
               <img class="app-nav__icon" :src="navGraph" alt="" aria-hidden="true" />
-              <span>图谱查询</span>
-              <img class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
+              <span v-if="!appStore.collapsed">图谱查询</span>
+              <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
             </RouterLink>
-            <div class="app-nav__group">服务调用</div>
-            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--open" active-class="app-nav__item--active" to="/business-service">
+            <div v-if="!appStore.collapsed" class="app-nav__group">服务调用</div>
+            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--open" active-class="app-nav__item--active" to="/business-service" :title="appStore.collapsed ? '业务服务' : undefined">
               <img class="app-nav__icon" :src="navReasoning" alt="" aria-hidden="true" />
-              <span>业务服务</span>
-              <img class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
+              <span v-if="!appStore.collapsed">业务服务</span>
+              <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
             </RouterLink>
           </nav>
 
           <div class="app-user">
             <img class="app-user__avatar" :src="avatarBen" alt="" aria-hidden="true" />
-            <span>系统管理员</span>
-            <img class="app-user__message" :src="iconMessage" alt="" aria-hidden="true" />
+            <span v-if="!appStore.collapsed">系统管理员</span>
+            <img v-if="!appStore.collapsed" class="app-user__message" :src="iconMessage" alt="" aria-hidden="true" />
           </div>
         </aside>
 
@@ -98,6 +107,11 @@ onErrorCaptured((error) => {
   height: 100%;
   background:
     linear-gradient(135deg, #dbeaff 0%, #eef6ff 45%, #e0f1ff 100%);
+  transition: grid-template-columns 0.2s ease;
+}
+
+.app-shell.is-collapsed {
+  grid-template-columns: var(--sidebar-width-collapsed) minmax(0, 1fr);
 }
 
 .app-sidebar {
@@ -158,11 +172,47 @@ onErrorCaptured((error) => {
 }
 
 .app-brand__menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.app-brand__menu img {
   width: 16px;
   height: 16px;
-  margin-left: auto;
   object-fit: contain;
   opacity: 0.72;
+}
+
+.app-brand__menu:hover {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.app-shell.is-collapsed .app-brand {
+  justify-content: center;
+}
+
+.app-shell.is-collapsed .app-brand__menu {
+  margin-left: 0;
+}
+
+.app-shell.is-collapsed .app-nav__item {
+  grid-template-columns: 18px;
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.app-shell.is-collapsed .app-nav__item--active {
+  width: calc(100% - 12px);
+  margin-left: 6px;
 }
 
 .app-nav {
