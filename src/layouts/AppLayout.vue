@@ -16,6 +16,17 @@ const route = useRoute()
 const appStore = useAppStore()
 const pageTitle = computed(() => String(route.meta.title ?? '亿级知识图谱'))
 const routeError = ref('')
+const serviceNavItems = [
+  { to: '/expert-direct', label: '科技专家直接关系' },
+  { to: '/node-indirect', label: '科技单节点间接关系' },
+  { to: '/two-point-achievement', label: '科技两点合作成果' },
+  { to: '/expert-colleague', label: '科技专家同事关系' },
+  { to: '/expert-alumni', label: '科技专家校友关系' },
+  { to: '/paper-cooperation', label: '专家论文合作关系' },
+  { to: '/enterprise-relation', label: '重点科技企业关系' },
+  { to: '/industry-chain-event', label: '产业链点事件关系' },
+  { to: '/industry-chain-panorama', label: '科技产业链全景图' },
+]
 
 onErrorCaptured((error) => {
   routeError.value = error instanceof Error ? error.message : String(error)
@@ -64,10 +75,20 @@ onErrorCaptured((error) => {
               <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
             </RouterLink>
             <div v-if="!appStore.collapsed" class="app-nav__group">服务调用</div>
-            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--open" active-class="app-nav__item--active" to="/business-service" :title="appStore.collapsed ? '业务服务' : undefined">
+            <div class="app-nav__item app-nav__item--top app-nav__item--open" :title="appStore.collapsed ? '业务服务' : undefined">
               <img class="app-nav__icon" :src="navReasoning" alt="" aria-hidden="true" />
               <span v-if="!appStore.collapsed">业务服务</span>
               <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
+            </div>
+            <RouterLink
+              v-for="item in serviceNavItems"
+              :key="item.to"
+              v-if="!appStore.collapsed"
+              class="app-nav__item app-nav__item--sub"
+              active-class="app-nav__item--active"
+              :to="item.to"
+            >
+              <span>{{ item.label }}</span>
             </RouterLink>
           </nav>
 

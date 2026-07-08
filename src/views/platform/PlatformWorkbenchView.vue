@@ -197,10 +197,11 @@ const modules: ServiceModule[] = [
 
 const props = defineProps<{
   initialTab?: PlatformTab
+  initialServiceKey?: string
 }>()
 
 const activeTab = ref<PlatformTab>(props.initialTab ?? 'overview')
-const activeServiceKey = ref(modules[0]?.key ?? '')
+const activeServiceKey = ref(props.initialServiceKey ?? modules[0]?.key ?? '')
 const activeBuildTab = ref<'entity' | 'relation' | 'property' | 'rule'>('entity')
 const activeServiceMode = ref<'test' | 'api'>('test')
 const selectedQueryType = ref('科技专家')
@@ -253,6 +254,15 @@ watch(
   (tab) => {
     if (tab) {
       activeTab.value = tab
+    }
+  },
+)
+
+watch(
+  () => props.initialServiceKey,
+  (serviceKey) => {
+    if (serviceKey) {
+      activeServiceKey.value = serviceKey
     }
   },
 )
@@ -535,8 +545,8 @@ const pageMeta = computed(() => {
       subtitle: '先输入条件，再返回子图、结构化结果与证据链',
     },
     service: {
-      title: '9 大业务服务',
-      subtitle: '统一入口调用底层图谱能力，输出图谱与结构化结果',
+      title: activeService.value.title,
+      subtitle: '按独立业务模块调用底层图谱能力，查看请求、响应与证据结果',
     },
   }
   return map[activeTab.value]
@@ -992,10 +1002,8 @@ const pageMeta = computed(() => {
 
         <div class="platform-service-console__body">
           <label>
-            <span>业务服务</span>
-            <select v-model="activeServiceKey">
-              <option v-for="item in modules" :key="item.key" :value="item.key">{{ item.title }}</option>
-            </select>
+            <span>当前模块</span>
+            <input :value="activeService.title" readonly />
           </label>
           <template v-if="activeServiceMode === 'test'">
             <label v-for="field in activeService.requestFields.slice(0, 3)" :key="field.name">
