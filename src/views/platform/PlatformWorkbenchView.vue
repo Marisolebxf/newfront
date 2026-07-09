@@ -398,13 +398,13 @@ const queryScopeDescriptions: Record<string, string> = {
 }
 
 const entityLegendItems = [
-  { label: '专家/人才', schema: 'Expert', tone: 'expert', shape: 'circle' },
-  { label: '机构/企业', schema: 'Organization', tone: 'org', shape: 'rect' },
-  { label: '论文成果', schema: 'Paper', tone: 'paper', shape: 'diamond' },
-  { label: '项目/专利', schema: 'Project / Patent', tone: 'project', shape: 'hexagon' },
-  { label: '政策/事件', schema: 'Policy / Event', tone: 'event', shape: 'pill' },
-  { label: '产业链节点', schema: 'IndustryChainNode', tone: 'chain', shape: 'rect' },
-  { label: '产品/技术领域', schema: 'Product / ResearchField', tone: 'field', shape: 'circle' },
+  { label: '专家/人才', schema: 'Expert', tone: 'expert' },
+  { label: '机构/企业', schema: 'Organization', tone: 'org' },
+  { label: '论文成果', schema: 'Paper', tone: 'paper' },
+  { label: '项目/专利', schema: 'Project / Patent', tone: 'project' },
+  { label: '政策/事件', schema: 'Policy / Event', tone: 'event' },
+  { label: '产业链节点', schema: 'IndustryChainNode', tone: 'chain' },
+  { label: '产品/技术领域', schema: 'Product / ResearchField', tone: 'field' },
 ]
 
 const graphEntitySummary = computed(() => {
@@ -1036,7 +1036,7 @@ const pageMeta = computed(() => {
           <span
             v-for="item in entityLegendItems"
             :key="item.schema"
-            :class="['platform-graph-legend__item', `is-${item.tone}`, `is-${item.shape}`]"
+            :class="['platform-graph-legend__item', `is-${item.tone}`]"
             :title="item.schema"
           >
             <i />
@@ -3045,25 +3045,6 @@ print(response.json())</pre>
   border: 2px solid #fff;
   border-radius: 50%;
   box-shadow: 0 1px 4px rgba(53, 77, 112, 0.16);
-}
-
-.platform-graph-legend__item.is-rect i {
-  border-radius: 4px;
-}
-
-.platform-graph-legend__item.is-diamond i {
-  border-radius: 3px;
-  transform: rotate(45deg);
-}
-
-.platform-graph-legend__item.is-hexagon i {
-  clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
-  border-radius: 0;
-}
-
-.platform-graph-legend__item.is-pill i {
-  width: 18px;
-  border-radius: 999px;
 }
 
 .platform-graph-legend__item.is-expert i { background: #1e8ff3; }
