@@ -280,7 +280,7 @@ onBeforeUnmount(() => {
 
         </aside>
 
-        <main class="app-main">
+        <main class="app-main" :class="{ 'is-overview-page': route.path === '/overview' }">
           <div class="app-top-actions">
             <span class="app-top-actions__context">{{ pageTitle }}</span>
             <div class="app-top-actions__right">
