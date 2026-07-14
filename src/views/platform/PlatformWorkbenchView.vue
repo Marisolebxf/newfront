@@ -975,7 +975,7 @@ const pageMeta = computed(() => {
       <aside class="kg-panel platform-detail">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">
-            {{ queryDetailMode === 'provenance' ? '数据溯源' : queryDetailMode === 'relation' ? '关系结构化结果' : queryDetailMode === 'entity' ? '实体结构化结果' : '查询结果摘要' }}
+            {{ queryDetailMode === 'provenance' ? '数据溯源' : queryDetailMode === 'relation' ? '关系结构化结果' : queryDetailMode === 'entity' ? '实体结构化结果' : '查询结果' }}
           </h2>
           <div class="platform-detail__tabs" aria-label="图谱详情类型">
             <button :class="{ 'is-active': queryDetailMode === 'summary' }" type="button" @click="queryDetailMode = 'summary'">摘要</button>
