@@ -1,6 +1,7 @@
 import './styles/tokens.css'
 import './styles/reset.css'
 import './styles/global.css'
+import './styles/readability.css'
 
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'

@@ -1,0 +1,230 @@
+/*
+ * Readability layer
+ *
+ * The prototype was initially tuned for a dense design canvas and contained
+ * many 8–10px labels.  Keep the information density, but establish a 12px
+ * minimum for supporting copy and a 13–14px baseline for actionable content.
+ * `!important` is intentional here: view styles are scoped and are emitted
+ * after the shared styles in production builds.
+ */
+
+:root {
+  --control-height: 36px;
+}
+
+.app-viewport {
+  font-size: 14px;
+}
+
+.app-viewport input,
+.app-viewport select,
+.app-viewport textarea {
+  font-size: 14px !important;
+  line-height: 20px;
+}
+
+.app-viewport table {
+  font-size: 13px;
+}
+
+.app-viewport th,
+.app-viewport td {
+  line-height: 20px;
+}
+
+.app-nav__group em {
+  font-size: 12px !important;
+}
+
+.app-top-actions__user {
+  min-height: 34px;
+  font-size: 13px !important;
+}
+
+.app-top-actions__user strong {
+  font-size: 13px !important;
+}
+
+.app-top-actions__user em,
+.app-top-actions__user > i {
+  font-size: 11px !important;
+}
+
+.platform-hero {
+  min-height: 72px !important;
+  padding-block: 13px !important;
+}
+
+.platform-hero h1 {
+  font-size: 24px !important;
+  line-height: 32px !important;
+}
+
+.platform-hero__subtitle,
+.platform-hero__actions span,
+.platform-hero__actions a {
+  font-size: 13px !important;
+}
+
+.platform-hero__flow {
+  font-size: 12px !important;
+  line-height: 18px;
+}
+
+.platform-hero__actions a {
+  height: 36px !important;
+  padding-inline: 14px !important;
+  line-height: 34px !important;
+}
+
+.platform-summary-card > header > div > strong {
+  font-size: 15px !important;
+}
+
+.platform-summary-card > header span,
+.platform-summary-card > header a,
+.platform-summary-card > header button {
+  font-size: 12px !important;
+  line-height: 18px;
+}
+
+.platform-summary-card__main span {
+  font-size: 13px !important;
+}
+
+.platform-summary-card__items {
+  padding-block: 12px !important;
+}
+
+.platform-summary-card__items em {
+  font-size: 11px !important;
+  line-height: 16px;
+}
+
+.platform-summary-card__items strong {
+  font-size: 12px !important;
+  line-height: 18px;
+}
+
+.platform-latest-changes .kg-panel__header span,
+.platform-risk-panel .kg-panel__header span,
+.platform-latest-changes .kg-panel__header > a,
+.platform-risk-panel .kg-panel__header > a {
+  font-size: 12px !important;
+}
+
+.platform-change-feed > a {
+  grid-template-columns: 54px 50px minmax(0, 1fr) 78px !important;
+  min-height: 82px !important;
+  gap: 12px !important;
+  padding: 12px 16px !important;
+}
+
+.platform-change-feed time {
+  font-size: 12px !important;
+}
+
+.platform-change-feed > a > span {
+  font-size: 10px !important;
+  line-height: 16px;
+}
+
+.platform-change-feed > a > div {
+  gap: 4px !important;
+}
+
+.platform-change-feed > a > div strong {
+  font-size: 13px !important;
+  line-height: 19px;
+}
+
+.platform-change-feed > a > div p {
+  font-size: 11px !important;
+  line-height: 17px !important;
+}
+
+.platform-change-feed > a > div em,
+.platform-change-feed > a > b {
+  font-size: 11px !important;
+  line-height: 16px;
+}
+
+.platform-risk-list article {
+  min-height: 96px !important;
+  padding: 15px 16px !important;
+}
+
+.platform-risk-list article span b {
+  font-size: 10px !important;
+  line-height: 16px;
+}
+
+.platform-risk-list article strong {
+  font-size: 13px !important;
+  line-height: 19px;
+}
+
+.platform-risk-list article p,
+.platform-risk-list article a {
+  font-size: 11px !important;
+  line-height: 17px !important;
+}
+
+.platform-structure-chart > header strong {
+  font-size: 14px !important;
+}
+
+.platform-structure-legend article,
+.platform-structure-legend article > span,
+.platform-structure-legend article > strong {
+  font-size: 12px !important;
+  line-height: 18px;
+}
+
+.platform-structure-legend article em,
+.platform-donut em {
+  font-size: 10px !important;
+  line-height: 15px;
+}
+
+.platform-page-head__action,
+.platform-task-filters,
+.platform-trace-link,
+.platform-card-arrow {
+  font-size: 13px !important;
+}
+
+.platform-table th,
+.platform-table td {
+  font-size: 13px !important;
+  line-height: 20px !important;
+}
+
+.platform-table small,
+.platform-table td em,
+.platform-table td code {
+  font-size: 11px !important;
+  line-height: 17px;
+}
+
+.platform-status {
+  font-size: 12px !important;
+  line-height: 18px;
+}
+
+.platform-page button:not(.graph-node):not(.graph-edge),
+.platform-page select,
+.platform-page input,
+.platform-page textarea {
+  min-height: 34px;
+}
+
+@media (max-width: 1440px) {
+  .platform-hero h1 {
+    font-size: 22px !important;
+  }
+
+  .platform-change-feed > a {
+    min-height: 76px !important;
+  }
+}
