@@ -38,10 +38,12 @@ jobs:
       - name: Build
         run: pnpm run build
         env:
-          VITE_BASE: /tech-kg-api-dev/
+          VITE_BASE: /newfront/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -79,7 +79,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '抽取交互场景、时间、成果和关系描述，进行语义相似度匹配并归类为论文合作、项目合作、同事协作等关系类型。',
         output: '直接关系类型、关系发生时间、交互场景、相关成果',
         threshold: '语义相似度 >= 0.82',
-        audit: '相似度不足或关系类型冲突时进入人工审核',
+        audit: '相似度不足或关系类型冲突时转入人工处理平台',
       },
       {
         name: '关系验证规则',
@@ -89,7 +89,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '校验双方实体 ID、关系发生时间、场景字段和成果归属是否一致，过滤缺少关键字段或实体冲突的候选关系。',
         output: '通过验证的直接关系和关系置信度',
         threshold: '综合置信度 >= 0.85',
-        audit: '低置信度、同名实体或时间冲突进入人工审核',
+        audit: '低置信度、同名实体或时间冲突转入人工处理平台',
       },
       {
         name: '成果关联规则',
@@ -135,7 +135,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '从核心节点出发按配置深度遍历邻接节点，过滤低置信度关系边，保留符合关系类型配置的可达路径。',
         output: '间接节点、传递路径、路径数量',
         threshold: '路径边置信度 >= 0.65',
-        audit: '路径断裂、重复路径或低置信度路径进入人工审核',
+        audit: '路径断裂、重复路径或低置信度路径转入人工处理平台',
       },
       {
         name: '关系传递规则',
@@ -191,7 +191,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '按专家 ID 聚合共同参与的论文、专利、项目和奖项，校验作者、成员、申请人或参与角色是否同时命中。',
         output: '合作成果清单、成果类型、完成时间',
         threshold: '成果匹配置信度 >= 0.8',
-        audit: '成果归属不清或专家同名时进入人工审核',
+        audit: '成果归属不清或专家同名时转入人工处理平台',
       },
       {
         name: '归因统计规则',
@@ -247,7 +247,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '比较两个专家在机构、部门、实验室或项目组中的任职起止时间，判断是否存在有效重叠区间。',
         output: '同事关系、生效时段、重叠年限',
         threshold: '任职时间重叠 >= 3 个月',
-        audit: '任职时间缺失或来源冲突时进入人工审核',
+        audit: '任职时间缺失或来源冲突时转入人工处理平台',
       },
       {
         name: '团队归属规则',
@@ -313,7 +313,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '根据同校、同院系、同导师、同届、同专业等维度对校友关系进行细分标注。',
         output: '校友关系维度、维度数量、关联说明',
         threshold: '至少命中 1 个有效维度',
-        audit: '仅弱匹配且缺少时间字段时进入人工审核',
+        audit: '仅弱匹配且缺少时间字段时转入人工处理平台',
       },
       {
         name: '后续互动关联规则',
@@ -359,7 +359,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '解析论文作者列表并匹配专家实体 ID，识别共现专家对，生成论文合作候选关系。',
         output: '论文合作关系、合作论文 ID、作者顺序',
         threshold: '作者实体匹配置信度 >= 0.85',
-        audit: '专家同名或作者单位缺失时进入人工审核',
+        audit: '专家同名或作者单位缺失时转入人工处理平台',
       },
       {
         name: '作者单位校验规则',
@@ -415,7 +415,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '识别专家与企业之间的任职、顾问、股东、合作方、项目参与等关联类型。',
         output: '专家-企业关系、关系类型、合作时间',
         threshold: '企业关联置信度 >= 0.8',
-        audit: '企业名称消歧失败或角色冲突时进入人工审核',
+        audit: '企业名称消歧失败或角色冲突时转入人工处理平台',
       },
       {
         name: '角色定位规则',
@@ -435,7 +435,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '关联企业行业地位、技术方向、经营状态和风险信息，辅助判断产业合作价值与风险。',
         output: '企业状态、经营风险、技术方向、行业标签',
         threshold: '企业属性更新置信度 >= 0.75',
-        audit: '经营状态变化或多源属性冲突时进入人工审核',
+        audit: '经营状态变化或多源属性冲突时转入人工处理平台',
       },
     ],
   },
@@ -481,7 +481,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '抽取事件中涉及的专家、企业、人才和产业节点，构建事件参与、影响、风险等关系。',
         output: '事件关系网、关联专家、关联企业、影响节点',
         threshold: '实体共现和语义关联置信度 >= 0.78',
-        audit: '事件主体不明确或多主体冲突时进入人工审核',
+        audit: '事件主体不明确或多主体冲突时转入人工处理平台',
       },
       {
         name: '趋势研判规则',
@@ -491,7 +491,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '根据事件时间线、产业节点影响范围和风险机会标签判断后续发展趋势。',
         output: '趋势判断、风险预警、机会提示',
         threshold: '趋势置信度 >= 0.7',
-        audit: '高风险趋势或判断依据不足时进入人工审核',
+        audit: '高风险趋势或判断依据不足时转入人工处理平台',
       },
     ],
   },
@@ -527,7 +527,7 @@ export const serviceModules: ServiceModule[] = [
         logic: '按上中下游环节组织技术、企业、专家、项目和事件实体，构建产业链全景结构。',
         output: '产业链节点、链路关系、核心技术、重点企业',
         threshold: '节点归属置信度 >= 0.78',
-        audit: '产业环节归属冲突时进入人工审核',
+        audit: '产业环节归属冲突时转入人工处理平台',
       },
       {
         name: '层级展开规则',

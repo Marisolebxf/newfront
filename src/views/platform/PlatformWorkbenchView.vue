@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
-import KgDetailModal, { type DetailModalPayload } from '../../components/kg-detail-modal.vue'
 import KgGraphCanvas from '../../components/kg-graph-canvas.vue'
 import { useToast } from '../../composables/use-toast'
 import {
+  getEdgeProvenance,
+  getNodeProvenance,
   queryGraphPreset,
   relationCategoryMap,
   type GraphEdgeData,
@@ -200,32 +202,29 @@ const props = defineProps<{
   initialServiceKey?: string
 }>()
 
+const router = useRouter()
+
 const activeTab = ref<PlatformTab>(props.initialTab ?? 'overview')
 const activeServiceKey = ref(props.initialServiceKey ?? modules[0]?.key ?? '')
-const activeBuildTab = ref<'entity' | 'relation' | 'property' | 'rule'>('entity')
 const activeServiceMode = ref<'test' | 'api'>('test')
 const selectedQueryType = ref('全部图谱')
-const queryKeyword = ref('张明远')
+const queryKeyword = ref('分析张明远近五年的论文合作网络，并展示核心合作专家和机构。')
 const queryRelationFilter = ref('全部关系')
 const queryEntityConfidence = ref('>= 0.75')
 const queryRelationConfidence = ref('>= 0.75')
 const queryApplied = ref(true)
-const buildSearchKeyword = ref('')
-const buildStatusFilter = ref('全部')
-const buildDomainFilter = ref('全部数据域')
-const buildSourceBatch = ref('全部批次')
-const processingSourceFilter = ref('MySQL')
-const processingStrategy = ref('每日 02:00 自动增量')
-const processingMode = ref('定时增量')
+const processingDomainFilter = ref('全部业务域')
+const processingStatusFilter = ref('全部状态')
+const processingTaskDomain = ref('论文域')
+const processingScope = ref('自上次成功点增量')
+const processingPriority = ref('普通')
+const processingReason = ref('')
+const processingStartDate = ref('2026-07-12')
+const processingEndDate = ref('2026-07-13')
 const isActionLoading = ref(false)
-const selectedGraphNodeId = ref<string | null>('core')
+const selectedGraphNodeId = ref<string | null>(null)
 const selectedGraphEdgeId = ref<string | null>(null)
-const queryDetailMode = ref<'summary' | 'entity' | 'relation'>('summary')
-const detailModalOpen = ref(false)
-const detailModalPayload = ref<DetailModalPayload | null>(null)
-const traceModalOpen = ref(false)
-const preserveBuildFilters = ref(false)
-const buildAuditContext = ref<{ title: string; batch: string } | null>(null)
+const queryDetailMode = ref<'summary' | 'entity' | 'relation' | 'provenance'>('summary')
 
 const { showToast } = useToast()
 
@@ -276,113 +275,138 @@ watch(
   },
 )
 
-const metrics = [
-  { label: '实体总量', value: '1.28 亿', hint: '+18,426 今日新增', tone: 'blue' },
-  { label: '关系总量', value: '6.42 亿', hint: '+92,318 今日新增', tone: 'green' },
-  { label: '接入数据源', value: '42', hint: '论文 / 项目 / 企业 / 机构', tone: 'purple' },
-  { label: '待人工审核', value: '326', hint: '低置信度与冲突数据', tone: 'orange' },
-]
+const assetOverviewGroups = [
+  { key: 'entity', title: '实体数据', total: '1.28 亿', totalLabel: '实体总量', added: '+1,183.6 万', addedLabel: '今日新增' },
+  { key: 'relation', title: '关系数据', total: '6.42 亿', totalLabel: '关系总量', added: '+2,040 万', addedLabel: '今日新增' },
+  { key: 'property', title: '属性值数据', total: '18.76 亿', totalLabel: '属性值总量', added: '+3,264 万', addedLabel: '今日新增及更新' },
+] as const
 
-const mysqlSourceRows = [
-  { name: 'expert_mysql', table: 'expert_profile', domain: '专家人才库', frequency: '每日 02:00', latest: '2026-07-09 02:04', status: '正常' },
-  { name: 'paper_mysql', table: 'paper_record', domain: '论文成果库', frequency: '每日 02:00', latest: '2026-07-09 02:08', status: '正常' },
-  { name: 'project_mysql', table: 'project_info', domain: '项目专利库', frequency: '每日 02:00', latest: '2026-07-09 02:11', status: '正常' },
-  { name: 'enterprise_mysql', table: 'enterprise_profile', domain: '企业工商库', frequency: '每日 02:00', latest: '2026-07-08 23:40', status: '待检查' },
+type AssetOverviewKey = (typeof assetOverviewGroups)[number]['key']
+const selectedAssetChange = ref<AssetOverviewKey | null>(null)
+const assetChangeRows = {
+  entity: [
+    { type: '机构 / 企业', object: '华南智能芯片有限公司', change: '新增 Organization', source: 'enterprise_profile', time: '10:30:13' },
+    { type: '专家 / 人才', object: '周启航', change: '新增 Expert', source: 'expert_profile', time: '10:30:18' },
+    { type: '论文成果', object: '《多模态大模型知识推理方法研究》', change: '新增 Paper', source: 'paper_record', time: '10:30:21' },
+    { type: '产品 / 技术产品', object: '边缘推理芯片 X7', change: '新增 Product', source: 'enterprise_product', time: '10:30:26' },
+  ],
+  relation: [
+    { type: '任职关系', object: '周启航 → 中国科学院自动化研究所', change: '新增 WORKS_AT', source: 'expert_employment', time: '10:30:22' },
+    { type: '成果关系', object: '周启航 → 多模态大模型知识推理方法研究', change: '新增 PUBLISH', source: 'paper_author', time: '10:30:25' },
+    { type: '产品关系', object: '华南智能芯片 → 边缘推理芯片 X7', change: '新增 HAS_PRODUCT', source: 'enterprise_product', time: '10:30:29' },
+  ],
+  property: [
+    { type: '企业属性', object: '华南智能芯片·注册资本', change: '新增 registered_capital', source: 'enterprise_profile', time: '10:30:14' },
+    { type: '企业属性', object: '华南智能芯片·上市状态', change: '更新 listing_status', source: 'enterprise_profile', time: '10:30:16' },
+    { type: '论文属性', object: 'P202607140018·发表时间', change: '新增 publish_date', source: 'paper_record', time: '10:30:23' },
+    { type: '关系属性', object: 'WORKS_AT_20418·置信度', change: '更新 confidence', source: 'graph_alignment', time: '10:30:31' },
+  ],
+} satisfies Record<AssetOverviewKey, Array<{ type: string; object: string; change: string; source: string; time: string }>>
+const activeAssetOverview = computed(() => assetOverviewGroups.find((item) => item.key === selectedAssetChange.value))
+
+const sourceRows = [
+  { object: '专家人才基础信息', table: 'expert_profile', domain: '人才域', schedule: '每日定时', frequency: '02:00', latest: '2026-07-13 02:04', status: '正常', task: 'DP-20260713-0150' },
+  { object: '专家教育经历', table: 'expert_education', domain: '人才域', schedule: '每日定时', frequency: '02:10', latest: '2026-07-13 02:12', status: '正常', task: 'DP-20260713-0150' },
+  { object: '专家任职经历', table: 'expert_employment', domain: '人才域', schedule: '每日定时', frequency: '02:20', latest: '2026-07-13 02:22', status: '正常', task: 'DP-20260713-0150' },
+  { object: '论文成果记录', table: 'paper_record', domain: '论文域', schedule: '每日定时', frequency: '02:00', latest: '2026-07-13 02:08', status: '异常', task: 'DP-20260713-0200' },
+  { object: '论文作者与机构', table: 'paper_author_org', domain: '论文域', schedule: '每日定时', frequency: '02:15', latest: '2026-07-13 02:18', status: '正常', task: 'DP-20260713-0200' },
+  { object: '论文引用关系', table: 'paper_citation', domain: '论文域', schedule: '每日定时', frequency: '02:30', latest: '2026-07-13 02:33', status: '正常', task: 'DP-20260713-0200' },
+  { object: '项目与专利主题', table: 'project_patent', domain: '专利域', schedule: '周期定时', frequency: '每 6 小时', latest: '2026-07-13 08:01', status: '正常', task: 'DP-20260713-0100' },
+  { object: '专利发明人信息', table: 'patent_inventor', domain: '专利域', schedule: '周期定时', frequency: '每 6 小时', latest: '2026-07-13 08:05', status: '正常', task: 'DP-20260713-0100' },
+  { object: '企业工商要素', table: 'enterprise_profile', domain: '企业域', schedule: '实时增量', frequency: '事件触发', latest: '2026-07-13 10:30', status: '更新中', task: 'DP-20260713-1030' },
+  { object: '企业产品与技术', table: 'enterprise_product', domain: '企业域', schedule: '实时增量', frequency: '事件触发', latest: '2026-07-13 10:28', status: '正常', task: 'DP-20260713-1030' },
+  { object: '企业投融资事件', table: 'enterprise_financing', domain: '企业域', schedule: '周期定时', frequency: '每 2 小时', latest: '2026-07-13 10:02', status: '正常', task: 'DP-20260713-1030' },
 ]
 
 const dataProcessingSteps = [
-  { name: '连接源库', status: '完成', desc: '校验 MySQL 连接、源表结构和增量游标' },
-  { name: '检查更新', status: '完成', desc: '按 last_update_time 识别新增与变更记录' },
-  { name: '清洗标准化', status: '完成', desc: '统一日期、枚举、空值、编码和字段命名' },
-  { name: '质量校验', status: '运行中', desc: '检查必填、重复、异常值和来源批次' },
-  { name: '写入标准表', status: '待生成', desc: '写入处理后的标准库表，供图谱构建使用' },
+  { id: 'source', name: '连接科技要素库', status: '完成', desc: '校验数据服务、库表结构和增量游标' },
+  { id: 'incremental', name: '检查更新', status: '完成', desc: '按 last_update_time 识别新增与变更记录' },
+  { id: 'normalize', name: '清洗标准化', status: '完成', desc: '统一日期、枚举、空值、编码和字段命名' },
+  { id: 'quality', name: '质量检验', status: '阻断', desc: '生成完整性、唯一性、一致性检验日志' },
+  { id: 'write', name: '写入标准表', status: '待执行', desc: '写入处理后的标准库表，供图谱构建使用' },
 ]
 
 const processingTaskRows = [
-  { batch: 'DP-20260709-0200', source: 'expert_mysql.expert_profile / paper_mysql.paper_record', domain: '专家人才库 / 论文成果库', type: '定时增量', time: '2026-07-09 02:00', input: '12,438', target: 'kg_stage.std_expert_profile, kg_stage.std_paper_record', status: '完成', progress: 100 },
-  { batch: 'DP-20260708-1405', source: 'enterprise_mysql.enterprise_profile', domain: '企业工商库', type: '手动更新', time: '2026-07-08 14:05', input: '486', target: 'kg_stage.std_enterprise_profile', status: '完成', progress: 100 },
-  { batch: 'DP-20260708-0200', source: 'project_mysql.project_info', domain: '项目专利库', type: '定时增量', time: '2026-07-08 02:00', input: '3,261', target: 'kg_stage.std_project_patent', status: '完成', progress: 100 },
-  { batch: 'DP-20260709-URGENT', source: 'enterprise_mysql.enterprise_profile', domain: '企业工商库', type: '紧急更新', time: '待执行', input: '-', target: '待写入', status: '排队', progress: 12 },
+  { batch: 'DP-20260713-0200', source: '科技要素数据库.paper_record', domain: '论文域', type: '定时调度', time: '2026-07-13 02:00', input: '12,604', target: 'kg_stage.std_paper_record', status: '阻断', progress: 72 },
+  { batch: 'DP-20260713-1030', source: '科技要素数据库.enterprise_profile', domain: '企业域', type: '人工紧急', time: '2026-07-13 10:30', input: '1,248', target: 'kg_stage.std_enterprise_profile', status: '运行中', progress: 43 },
+  { batch: 'DP-20260713-0150', source: '科技要素数据库.expert_profile', domain: '人才域', type: '定时调度', time: '2026-07-13 01:50', input: '8,426', target: 'kg_stage.std_expert_profile', status: '成功', progress: 100 },
+  { batch: 'DP-20260713-0100', source: '科技要素数据库.project_patent', domain: '专利域', type: '定时调度', time: '2026-07-13 01:00', input: '3,261', target: 'kg_stage.std_project_patent', status: '成功', progress: 100 },
 ]
 
-const processingSourceOptions = ['MySQL']
-const processingStrategyOptions = ['每日 02:00 自动增量', '每 6 小时检查更新', '仅手动触发', '紧急任务优先']
-const processingModeOptions = ['定时增量', '手动更新', '紧急更新']
+const processingDomainOptions = ['全部业务域', '人才域', '论文域', '专利域', '企业域']
+const processingStatusOptions = ['全部状态', '成功', '运行中', '阻断', '排队']
+const processingTaskDomainOptions = ['人才域', '论文域', '专利域', '企业域']
+const processingScopeOptions = ['自上次成功点增量', '指定时间范围', '全量重建']
+const processingPriorityOptions = ['普通', '紧急']
 
-const filteredMysqlSourceRows = computed(() => mysqlSourceRows)
+const filteredProcessingTaskRows = computed(() => processingTaskRows.filter((row) => (
+  (processingStatusFilter.value === '全部状态' || row.status === processingStatusFilter.value)
+  && (processingDomainFilter.value === '全部业务域' || row.domain.includes(processingDomainFilter.value.replace('域', '')))
+)))
 
-const filteredProcessingTaskRows = computed(() => processingTaskRows)
+const qualityLogRows = [
+  { rule: 'Q-001 必填完整性', object: 'paper_record.title', batch: 'DP-20260713-0200', checked: '12,604', failed: '18', rate: '99.86%', status: '告警' },
+  { rule: 'Q-014 唯一性检验', object: 'paper_record.paper_id', batch: 'DP-20260713-0200', checked: '12,604', failed: '326', rate: '97.41%', status: '阻断' },
+  { rule: 'Q-027 枚举一致性', object: 'paper_record.source_type', batch: 'DP-20260713-0200', checked: '12,604', failed: '41', rate: '99.67%', status: '告警' },
+]
+
+const buildStats = [
+  { label: '本次输入', value: '1,260.4 万', note: '标准结构化记录' },
+  { label: '自动入库', value: '1,183.6 万', note: '高置信度实体关系' },
+  { label: '隔离异常', value: '326', note: '冲突与低置信度对象' },
+  { label: 'Schema 覆盖', value: '7 / 42', note: '实体类型 / 关系类型' },
+]
+
+const latestChanges = [
+  { time: '10:30', type: '更新', domain: '企业域', title: '企业工商要素增量更新完成', detail: '新增 1,248 家企业，更新注册资本、上市状态和行业分类', impact: '影响 Organization、HAS_PRODUCT', to: '/task-detail/processing/DP-20260713-1030?step=normalize' },
+  { time: '10:18', type: '对齐', domain: '专利域', title: '专利发明人与专家实体对齐', detail: '2,418 个候选实体完成对齐，42 个低置信度对象转人工确认', impact: '影响 Expert、INVENT_PATENT', to: '/task-detail/construction/KG-INC-20260713-016?step=align' },
+  { time: '10:13', type: '新增', domain: '论文域', title: '论文与人才图谱增量构建', detail: '已抽取 3,261 个实体、8,942 条关系，326 条未通过 Schema 校验', impact: '影响 Paper、Expert、PUBLISH', to: '/task-detail/construction/KG-INC-20260713-018?step=llm' },
+  { time: '09:48', type: '质量', domain: '论文域', title: '论文唯一性规则检测到冲突', detail: 'paper_id 对应多条来源记录，385 条数据已隔离', impact: '阻断标准表写入', to: '/task-detail/processing/DP-20260713-0200?step=quality' },
+  { time: '昨日', type: 'Schema', domain: '全域', title: '统一 Schema v1.8 已发布', detail: '确认 11 个首版必落实体、42 个标准事实关系和 9 类候选实体', impact: '所有新建批次使用 v1.8', to: '/schema' },
+]
+
+const managementRisks = [
+  { level: '严重', title: '今日数据更新批次待处理', detail: '711 个异常处理实例已隔离，处理后发布', to: '/manual-review?batch=UPD-20260714', action: '进入处理' },
+  { level: '警告', title: '人工审核正在进行', detail: '异常已隔离、主流程未扩大影响 · 43 条处理中', to: '/manual-review?status=处理中', action: '查看批次' },
+]
+
+
+const readonlySchemaRows = [
+  { type: '实体', name: 'Expert', fields: 'id, name, aliases, organization, research_fields', rule: '姓名 + 机构 + 成果证据联合消歧' },
+  { type: '实体', name: 'Paper', fields: 'id, title, authors, venue, publish_date', rule: 'DOI / 标题指纹唯一约束' },
+  { type: '关系', name: 'CO_AUTHOR', fields: 'source, target, paper_ids, confidence', rule: '共同论文 + 单位交叉验证' },
+  { type: '关系', name: 'WORKS_AT', fields: 'expert_id, organization_id, start, end', rule: '时间段不冲突、来源可追溯' },
+]
 
 const buildPipelineSteps = [
-  { name: '读取结构化数据', count: '12,604 条', status: '完成', desc: '从 kg_stage 标准表读取专家、论文、企业、项目等记录' },
-  { name: '字段映射入 Schema', count: '7 类实体', status: '完成', desc: '字段映射到统一实体、属性和关系类型' },
-  { name: '实体对齐与属性生成', count: '3,261 个实体 / 1,203 项属性', status: '处理中', desc: '基于 ID、名称、机构和成果证据做消歧与属性更新' },
-  { name: '关系生成与证据校验', count: '8,942 条关系', status: '处理中', desc: '生成合作、任职、产业事件等候选关系并计算置信度' },
-  { name: '结果入库与人工审核', count: '326 条待审', status: '待审核', desc: '高置信度自动入库，低置信度和冲突对象进入人工队列' },
+  { id: 'read', name: '读取结构化数据', count: '12,604 条', status: '完成', desc: '从 kg_stage 标准表读取专家、论文、企业、项目等记录' },
+  { id: 'schema', name: '字段映射入 Schema', count: '7 类实体', status: '完成', desc: '字段映射到统一实体、属性和关系类型' },
+  { id: 'llm', name: '大模型抽取', count: '3,261 实体 / 8,942 关系', status: '阻断', desc: '展示模型版本、Prompt、输入输出、置信度和评估结果' },
+  { id: 'validate', name: '规则验证与证据回链', count: '1,203 属性 / 326 异常', status: '待执行', desc: '用 Schema 约束、存量图谱和原始来源交叉验证抽取结果' },
+  { id: 'persist', name: '结果入库与异常分流', count: '326 条待处理', status: '待执行', desc: '高置信度结果自动入库，低置信度与冲突对象转入独立人工处理平台' },
 ]
 
 
-const entityDistribution = [
-  { label: '专家/人才', schema: 'Expert', count: '4,286 万', ratio: 34, tone: 'expert' },
-  { label: '机构/企业', schema: 'Organization', count: '2,164 万', ratio: 17, tone: 'org' },
-  { label: '论文成果', schema: 'Paper', count: '2,931 万', ratio: 23, tone: 'paper' },
-  { label: '项目/专利', schema: 'Project / Patent', count: '1,438 万', ratio: 11, tone: 'project' },
-  { label: '政策/事件', schema: 'Policy / Event', count: '812 万', ratio: 6, tone: 'event' },
-  { label: '产业链节点', schema: 'IndustryChainNode', count: '641 万', ratio: 5, tone: 'chain' },
-  { label: '产品/技术领域', schema: 'Product / ResearchField', count: '492 万', ratio: 4, tone: 'field' },
+const entityStructure = [
+  { label: '专家 / 人才', schema: 'Expert', count: '4,286 万', ratio: 34, tone: '#2e90fa' },
+  { label: '论文成果', schema: 'Paper', count: '2,931 万', ratio: 23, tone: '#7a5af8' },
+  { label: '机构 / 企业', schema: 'Organization', count: '2,164 万', ratio: 17, tone: '#12b76a' },
+  { label: '项目 / 专利', schema: 'Project / Patent', count: '1,438 万', ratio: 11, tone: '#f79009' },
+  { label: '其他实体', schema: 'Event / Product / Field', count: '1,901 万', ratio: 15, tone: '#98a2b3' },
 ]
 
-const relationDistribution = [
-  { label: '发表/引用/成果', schema: 'PUBLISH / CITES / OUTPUT', count: '2.04 亿', ratio: 32 },
-  { label: '任职/就读/作者单位', schema: 'WORKS_AT / STUDY_AT / AFFILIATED_WITH', count: '1.28 亿', ratio: 20 },
-  { label: '项目/专利参与', schema: 'LEAD_PROJECT / INVENT_PATENT', count: '1.16 亿', ratio: 18 },
-  { label: '企业/产品/事件', schema: 'HAS_PRODUCT / HAS_EVENT', count: '0.92 亿', ratio: 14 },
-  { label: '产业链上下游', schema: 'PARENT_OF / UPSTREAM_DOWNSTREAM', count: '0.58 亿', ratio: 9 },
-  { label: '业务推理关系', schema: 'DIRECT / INDIRECT / CO_AUTHOR', count: '0.44 亿', ratio: 7 },
-]
-
-const pipeline = [
-  { name: '数据接入', count: '12,438 条', status: '完成', desc: '多源数据读取与批次登记' },
-  { name: '清洗标准化', count: '11,982 条', status: '完成', desc: '字段归一与缺失校验' },
-  { name: '实体关系抽取', count: '8,942 条', status: '运行中', desc: '规则与大模型联合抽取' },
-  { name: '比对消歧', count: '1,203 条', status: '运行中', desc: '与存量图谱比对合并' },
-  { name: '置信度审核', count: '326 条', status: '待审核', desc: '低置信度进入人工队列' },
-  { name: '入库服务调用', count: '7,604 条', status: '排队', desc: '写入图库并开放查询' },
+const relationStructure = [
+  { label: '发表 / 引用 / 成果', schema: 'PUBLISH / CITES / OUTPUT', count: '2.04 亿', ratio: 32, tone: '#165dff' },
+  { label: '任职 / 就读 / 作者单位', schema: 'WORKS_AT / STUDY_AT', count: '1.28 亿', ratio: 20, tone: '#2e90fa' },
+  { label: '项目 / 专利参与', schema: 'LEAD_PROJECT / INVENT_PATENT', count: '1.16 亿', ratio: 18, tone: '#06aed4' },
+  { label: '企业 / 产品 / 事件', schema: 'HAS_PRODUCT / HAS_EVENT', count: '0.92 亿', ratio: 14, tone: '#7a5af8' },
+  { label: '其他关系', schema: '产业链 / 推理关系', count: '1.02 亿', ratio: 16, tone: '#98a2b3' },
 ]
 
 const taskRows = [
-  { batch: 'KG-INC-20260706-01', source: '论文库增量', domain: '论文成果库', stage: '关系抽取', status: '运行中', progress: 72, entities: '3,261', relations: '8,942', properties: '1,203', autoStored: '10,638', conflicts: '41', quality: '0.88', next: '处理 41 条低置信度实体与关系' },
-  { batch: 'KG-INC-20260706-02', source: '企业工商库', domain: '企业工商库', stage: '人工审核', status: '待审核', progress: 58, entities: '486', relations: '1,280', properties: '214', autoStored: '1,894', conflicts: '86', quality: '0.76', next: '确认工商字段冲突与企业合作证据' },
-  { batch: 'KG-FULL-20260705-08', source: '专家人才库', domain: '专家人才库', stage: '图谱入库', status: '完成', progress: 100, entities: '18,420', relations: '62,117', properties: '6,410', autoStored: '86,947', conflicts: '0', quality: '0.94', next: '已完成入库，可进入查询服务' },
-]
-const selectedProcessingTaskBatch = ref(taskRows[0]?.batch ?? '')
-const selectedProcessingTask = computed(() => (
-  taskRows.find((row) => row.batch === selectedProcessingTaskBatch.value) ?? taskRows[0]
-))
-
-const entityRows = [
-  { name: '张明远', type: '科技专家', domain: '论文成果库', match: '张明远 / Zhang Mingyuan', score: '0.92', action: '建议合并', status: '待审核', reason: '实体冲突', batch: 'KG-INC-20260706-01', auditTitle: '实体重复疑似冲突' },
-  { name: '先进计算实验室', type: '机构团队', domain: '论文成果库', match: '先进计算与智能系统实验室', score: '0.87', action: '待人工确认', status: '待审核', reason: '实体冲突', batch: 'KG-INC-20260706-01', auditTitle: '实体重复疑似冲突' },
-  { name: '华南智能芯片有限公司', type: '科技企业', domain: '企业工商库', match: '无高相似候选', score: '0.31', action: '创建新实体', status: '冲突数据', reason: '低置信度', batch: 'KG-INC-20260706-02', auditTitle: '新增实体待确认' },
-]
-
-const relationRows = [
-  { source: '张明远', target: '李佳宁', relation: '论文合作', domain: '专家人才库', evidence: '共同发表论文 4 篇', confidence: '0.94', status: '自动入库', reason: '已通过', batch: 'KG-FULL-20260705-08', auditTitle: '论文合作自动通过' },
-  { source: '华南智能芯片', target: '腾讯', relation: '企业合作', domain: '企业工商库', evidence: '单一网页来源，缺少工商交叉验证', confidence: '0.74', status: '待审核', reason: '证据不足', batch: 'KG-INC-20260706-01', auditTitle: '关系证据不足' },
-  { source: '张明远', target: '王青', relation: '校友关系', domain: '专家人才库', evidence: '同校同院系，时间重叠 2 年', confidence: '0.78', status: '待审核', reason: '低置信度', batch: 'KG-INC-20260706-02', auditTitle: '校友关系低置信度' },
-  { source: '李佳宁', target: '湾区智能制造联盟', relation: '产业事件参与', domain: '产业链事件库', evidence: 'TOP-N 事件报道与项目名单', confidence: '0.71', status: '待审核', reason: '证据不足', batch: 'KG-FULL-20260705-08', auditTitle: '产业链事件共现' },
-]
-
-const propertyRows = [
-  { object: '张明远', property: '论文数量', domain: '论文成果库', oldValue: '128', newValue: '132', rule: '动态属性自动更新', status: '待审核', reason: '属性冲突', batch: 'KG-INC-20260706-02', auditTitle: '属性来源不一致' },
-  { object: '李佳宁', property: '被引次数', domain: '论文成果库', oldValue: '3,421', newValue: '3,568', rule: '超过阈值自动入库', status: '自动入库', reason: '已通过', batch: 'KG-FULL-20260705-08', auditTitle: '高置信度属性更新' },
-  { object: '某科技企业', property: '经营状态', domain: '企业工商库', oldValue: '存续', newValue: '注销风险', rule: '冲突数据进入审核', status: '冲突数据', reason: '属性冲突', batch: 'KG-INC-20260706-02', auditTitle: '属性来源不一致' },
-]
-
-const ruleRows = [
-  { name: '专家姓名别名消歧规则', type: '实体消歧', method: '字段映射 + 相似度算法', threshold: '0.86', status: '启用' },
-  { name: '论文作者合作关系抽取', type: '关系抽取', method: '作者列表位置 + 单位校验', threshold: '0.90', status: '启用' },
-  { name: '企业关联角色识别', type: '属性/关系识别', method: '正则 + 页面字段定位 + 人工确认', threshold: '0.80', status: '调试中' },
+  { batch: 'KG-INC-20260713-018', source: '论文增量批次', domain: '论文 / 人才', stage: '大模型抽取', status: '阻断', progress: 46, entities: '3,261', relations: '8,942', properties: '1,203', autoStored: '0', conflicts: '326', quality: '0.76', next: '异常已隔离，校正后从失败节点重跑' },
+  { batch: 'KG-INC-20260713-016', source: '专利项目主题库', domain: '专利域', stage: '实体对齐', status: '运行中', progress: 68, entities: '2,418', relations: '5,206', properties: '864', autoStored: '0', conflicts: '42', quality: '0.88', next: '继续执行证据回链与冲突校验' },
+  { batch: 'KG-FULL-20260712-008', source: '科技专家人才库', domain: '人才域', stage: '图谱入库', status: '成功', progress: 100, entities: '18,420', relations: '62,117', properties: '6,410', autoStored: '86,947', conflicts: '0', quality: '0.94', next: '已完成入库，可进入查询服务' },
 ]
 
 const queryTypes = ['全部图谱', '专家人才子图', '科研成果子图', '机构企业子图', '产业链事件子图', '入库候选子图']
@@ -394,7 +418,7 @@ const queryScopeDescriptions: Record<string, string> = {
   科研成果子图: '围绕 Paper / Patent / Project / Achievement 展示成果产出和引用链路。',
   机构企业子图: '围绕 Organization / Product 展示任职、工商、产品、项目和专家关联。',
   产业链事件子图: '围绕 IndustryChainNode / Event 展示产业环节、TOP-N 事件和影响关系。',
-  入库候选子图: '展示候选实体、候选关系、规则命中和人工审核状态。',
+  入库候选子图: '展示候选实体、候选关系、规则命中和异常隔离状态。',
 }
 
 const entityLegendItems = [
@@ -428,28 +452,29 @@ const queryActiveCategories = computed(() => {
 })
 
 const selectedQueryNode = computed(() => {
-  return (
-    queryGraphPreset.nodes.find((node) => node.id === selectedGraphNodeId.value) ??
-    queryGraphPreset.nodes[0]
-  )
+  if (!selectedGraphNodeId.value) return null
+  return queryGraphPreset.nodes.find((node) => node.id === selectedGraphNodeId.value) ?? null
 })
 
 const selectedQueryEdge = computed(() => {
-  return (
-    queryGraphPreset.edges.find((edge) => edge.id === selectedGraphEdgeId.value) ??
-    queryGraphPreset.edges[0]
-  )
+  if (!selectedGraphEdgeId.value) return null
+  return queryGraphPreset.edges.find((edge) => edge.id === selectedGraphEdgeId.value) ?? null
 })
 
-const selectedQueryEdgeNodes = computed(() => ({
-  from: queryGraphPreset.nodes.find((node) => node.id === selectedQueryEdge.value.from),
-  to: queryGraphPreset.nodes.find((node) => node.id === selectedQueryEdge.value.to),
-}))
+const selectedQueryEdgeNodes = computed(() => {
+  const edge = selectedQueryEdge.value
+  if (!edge) return { from: undefined, to: undefined }
+  return {
+    from: queryGraphPreset.nodes.find((node) => node.id === edge.from),
+    to: queryGraphPreset.nodes.find((node) => node.id === edge.to),
+  }
+})
 
 const selectedQueryRelationConfidence = computed(() => {
   const from = selectedQueryEdgeNodes.value.from
   const to = selectedQueryEdgeNodes.value.to
-  if (!from || !to) return '0.00'
+  const edge = selectedQueryEdge.value
+  if (!from || !to || !edge) return '0.00'
   const categoryWeight: Record<string, number> = {
     论文合作: 0.03,
     同事: 0.01,
@@ -459,77 +484,74 @@ const selectedQueryRelationConfidence = computed(() => {
     间接关系: -0.05,
   }
   const baseConfidence = (from.confidence + to.confidence) / 2
-  const confidence = Math.min(0.99, Math.max(0.6, baseConfidence + (categoryWeight[selectedQueryEdge.value.category] ?? 0)))
+  const confidence = Math.min(0.99, Math.max(0.6, baseConfidence + (categoryWeight[edge.category] ?? 0)))
   return confidence.toFixed(2)
 })
 
 const selectedQueryEdgeRows = computed(() => {
   const from = selectedQueryEdgeNodes.value.from
   const to = selectedQueryEdgeNodes.value.to
-  if (!from || !to) return []
+  const edge = selectedQueryEdge.value
+  if (!from || !to || !edge) return []
   return [
     ['源实体', `${from.label} / ${from.entityType}`] as const,
     ['目标实体', `${to.label} / ${to.entityType}`] as const,
-    ['关系类型', selectedQueryEdge.value.label] as const,
-    ['关系分类', selectedQueryEdge.value.category] as const,
+    ['关系类型', edge.label] as const,
+    ['关系分类', edge.category] as const,
     ['关系置信度', selectedQueryRelationConfidence.value] as const,
     ['来源说明', from.evidence[0] ?? to.evidence[0] ?? '来自图谱关系来源聚合'] as const,
   ]
 })
 
-const selectedQueryNodeRows = computed(() => [
-  ['实体名称', selectedQueryNode.value.label] as const,
-  ['实体类型', selectedQueryNode.value.entityType] as const,
-  ['关系数', selectedQueryNode.value.relations] as const,
-  ['实体置信度', selectedQueryNode.value.confidence.toFixed(2)] as const,
-  ['判断依据', '实体对齐、名称消歧、类型归一、多源交叉校验'] as const,
-  ['数据来源', '专家库 / 论文库 / 项目库 / 工商库'] as const,
-  ['更新时间', '2026-07-06 10:30'] as const,
-])
-
-const buildBatchOptions = ['全部批次', 'KG-INC-20260706-01', 'KG-INC-20260706-02', 'KG-FULL-20260705-08']
-const buildDomainOptions = ['全部数据域', '专家人才库', '论文成果库', '企业工商库', '产业链事件库']
-
-function matchesBuildFilters(keywordFields: string[], status: string, batch: string, domain: string) {
-  const keyword = buildSearchKeyword.value.trim()
-  const keywordMatch = !keyword || keywordFields.some((field) => field.includes(keyword))
-  const statusMatch = buildStatusFilter.value === '全部' || buildStatusFilter.value === status
-  const domainMatch = buildDomainFilter.value === '全部数据域' || buildDomainFilter.value === domain
-  const batchMatch = buildSourceBatch.value === '全部批次' || buildSourceBatch.value === batch
-  return keywordMatch && statusMatch && domainMatch && batchMatch
-}
-
-const filteredEntityRows = computed(() => {
-  return entityRows.filter((row) =>
-    matchesBuildFilters([row.name, row.type, row.domain, row.match, row.reason, row.auditTitle], row.status, row.batch, row.domain),
-  )
+const selectedQueryNodeRows = computed(() => {
+  const node = selectedQueryNode.value
+  if (!node) return []
+  return [
+    ['实体名称', node.label] as const,
+    ['实体类型', node.entityType] as const,
+    ['关系数', node.relations] as const,
+    ['实体置信度', node.confidence.toFixed(2)] as const,
+    ['判断依据', '实体对齐、名称消歧、类型归一、多源交叉校验'] as const,
+    ['更新时间', '2026-07-13 10:30'] as const,
+  ]
 })
 
-const filteredRelationRows = computed(() => {
-  return relationRows.filter((row) =>
-    matchesBuildFilters([row.source, row.target, row.relation, row.domain, row.reason, row.evidence, row.auditTitle], row.status, row.batch, row.domain),
-  )
+const selectedQueryProvenance = computed(() => {
+  if (selectedQueryNode.value) return getNodeProvenance(selectedQueryNode.value)
+  if (selectedQueryEdge.value) {
+    return getEdgeProvenance(
+      selectedQueryEdge.value,
+      selectedQueryEdgeNodes.value.from,
+      selectedQueryEdgeNodes.value.to,
+    )
+  }
+  return null
 })
 
-const filteredPropertyRows = computed(() => {
-  return propertyRows.filter((row) =>
-    matchesBuildFilters([row.object, row.property, row.domain, row.reason, row.rule, row.auditTitle], row.status, row.batch, row.domain),
-  )
+const selectedQueryProvenanceTarget = computed(() => {
+  const node = selectedQueryNode.value
+  if (node) {
+    return {
+      kind: '实体',
+      name: node.label,
+      type: node.entityType,
+      id: node.id,
+      confidence: node.confidence.toFixed(2),
+    }
+  }
+  const edge = selectedQueryEdge.value
+  const from = selectedQueryEdgeNodes.value.from
+  const to = selectedQueryEdgeNodes.value.to
+  if (!edge || !from || !to) return null
+  return {
+    kind: '关系',
+    name: `${from.label} → ${to.label}`,
+    type: edge.label,
+    id: edge.id,
+    confidence: selectedQueryRelationConfidence.value,
+  }
 })
 
-const buildResultCount = computed(() => {
-  if (activeBuildTab.value === 'entity') return filteredEntityRows.value.length
-  if (activeBuildTab.value === 'relation') return filteredRelationRows.value.length
-  if (activeBuildTab.value === 'property') return filteredPropertyRows.value.length
-  return ruleRows.length
-})
-
-const buildResultLabel = computed(() => {
-  if (activeBuildTab.value === 'entity') return '实体'
-  if (activeBuildTab.value === 'relation') return '关系'
-  if (activeBuildTab.value === 'property') return '属性'
-  return '规则'
-})
 
 async function runWithLoading(message: string, action?: () => void) {
   isActionLoading.value = true
@@ -551,17 +573,54 @@ function openEdgeDetail(edge: GraphEdgeData) {
   queryDetailMode.value = 'relation'
 }
 
+function openSelectedProcessingInstance() {
+  const provenance = selectedQueryProvenance.value
+  const target = selectedQueryProvenanceTarget.value
+  if (!provenance || !target) return
+  void router.push({
+    name: 'processing-instance-detail',
+    params: { instanceId: provenance.task.instanceId },
+    query: {
+      stage: '图谱构建',
+      objectName: target.name,
+      objectId: target.id,
+      objectType: target.type,
+      kind: target.kind,
+      confidence: target.confidence,
+      sourceTable: provenance.evidences[0]?.technicalTable,
+      sourceRecordId: provenance.evidences[0]?.fieldIdentifier,
+      rule: provenance.result.ruleName,
+    },
+  })
+}
+
 function handleQuery() {
   void runWithLoading(`查询完成：${selectedQueryType.value} / ${queryKeyword.value}`, () => {
     queryApplied.value = true
-    selectedGraphNodeId.value = 'core'
+    selectedGraphNodeId.value = null
     selectedGraphEdgeId.value = null
     queryDetailMode.value = 'summary'
   })
 }
 
 function handleStartTask() {
-  void runWithLoading(`已创建${processingMode.value}任务：${processingSourceFilter.value} / ${processingStrategy.value}`)
+  const priority = processingPriority.value === '紧急' ? '紧急优先' : '普通优先级'
+  if (processingScope.value === '全量重建') {
+    void runWithLoading(`已生成全量重建确认单：${processingTaskDomain.value} / ${priority}，需二次确认后执行`)
+    return
+  }
+  const range = processingScope.value === '指定时间范围' ? ` / ${processingStartDate.value} 至 ${processingEndDate.value}` : ''
+  void runWithLoading(`已创建人工触发任务：${processingTaskDomain.value} / ${processingScope.value}${range} / ${priority}`)
+}
+
+const processingActionLabel = computed(() => processingScope.value === '全量重建' ? '生成确认单' : '创建并执行')
+
+function openProcessDetail(area: 'processing' | 'construction', taskId: string, step?: string) {
+  void router.push({
+    name: 'task-detail',
+    params: { area, taskId },
+    query: step ? { step } : undefined,
+  })
 }
 
 function handleExecuteService() {
@@ -573,51 +632,21 @@ function handleCopyEndpoint() {
   showToast('接口信息已复制到剪贴板', 'info')
 }
 
-function handleBuildSearch() {
-  showToast(`已筛选 ${buildResultCount.value} 条${buildResultLabel.value}记录`, 'info')
-}
-
-function handleAuditAction(itemTitle: string, action: string) {
-  showToast(`${itemTitle}：${action}已提交`)
-}
-
-function handleRowDetail(name: string) {
-  detailModalPayload.value = {
-    title: name,
-    entityType: activeBuildTab.value === 'entity' ? '图谱对象' : '治理对象',
-    relations: '待关联关系 2',
-    confidence: '0.86',
-    updatedAt: '2026-07-06 10:30',
-    evidence: ['记录来自最新增量批次 KG-INC-20260706-01。', '审核通过后将写入图谱。'],
-  }
-  detailModalOpen.value = true
-}
-
 watch(activeServiceKey, () => {
-  selectedGraphNodeId.value = 'core'
+  selectedGraphNodeId.value = null
+  selectedGraphEdgeId.value = null
 })
 
-watch(activeBuildTab, () => {
-  if (preserveBuildFilters.value) {
-    preserveBuildFilters.value = false
-    return
-  }
-  buildSearchKeyword.value = ''
-  buildStatusFilter.value = '全部'
-  buildDomainFilter.value = '全部数据域'
-  buildSourceBatch.value = '全部批次'
-  buildAuditContext.value = null
-})
 
 const pageMeta = computed(() => {
   const map: Record<PlatformTab, { title: string; subtitle: string; statLabel?: string; statValue?: string }> = {
     overview: {
       title: '亿级科技知识图谱平台',
-      subtitle: '统一呈现接入、构建、治理、查询与业务服务运行态',
+      subtitle: '自动识别科技要素数据变化，完成数据处理与图谱构建，为查询、知识问答和业务服务提供统一知识底座',
     },
     processing: {
       title: '数据处理与结构化输出',
-      subtitle: '从 MySQL 源库定时同步数据，完成格式整理、清洗校验，并输出标准结构化数据集',
+      subtitle: '从科技要素数据库接入人才、论文、专利、企业等业务数据，完成清洗、质检与可追溯输出',
     },
     construction: {
       title: '图谱构建与治理',
@@ -644,6 +673,7 @@ const pageMeta = computed(() => {
         <h1>{{ pageMeta.title }}</h1>
         <p class="platform-hero__subtitle">{{ pageMeta.subtitle }}</p>
       </div>
+      <div class="platform-hero__actions"><span><i></i>平台服务正常 · 2 个批次待处理</span><RouterLink to="/tasks?module=图谱版本">当前图谱 KG-2026.07.12.008</RouterLink><RouterLink to="/tasks">查看任务</RouterLink><RouterLink to="/manual-review">进入人工处理</RouterLink></div>
     </header>
 
     <header v-else class="platform-page-head">
@@ -654,113 +684,88 @@ const pageMeta = computed(() => {
     </header>
 
     <main v-if="activeTab === 'overview'" class="platform-content platform-overview">
-      <section class="platform-metrics" aria-label="平台指标">
-        <article v-for="item in metrics" :key="item.label" :class="['platform-metric', `is-${item.tone}`]">
-          <span>{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
-          <em>{{ item.hint }}</em>
+      <section class="platform-summary-grid" aria-label="实体、关系与属性值数据总览">
+        <article v-for="group in assetOverviewGroups" :key="group.key" :class="['kg-panel', 'platform-summary-card', `is-${group.key}`]">
+          <header><div><strong>{{ group.title }}</strong><span><i />数据已更新</span></div><button type="button" @click="selectedAssetChange = group.key">查看今日新增 →</button></header>
+          <div class="platform-summary-card__main"><section><strong>{{ group.total }}</strong><span>{{ group.totalLabel }}</span></section><section class="is-added"><strong>{{ group.added }}</strong><span>{{ group.addedLabel }}</span></section></div>
         </article>
       </section>
 
-      <section class="kg-panel platform-pipeline-panel">
-        <div class="kg-panel__header">
-          <h2 class="kg-panel__title">数据到图谱处理闭环</h2>
-          <span>近 24 小时</span>
+      <section class="platform-overview-main">
+        <div class="kg-panel platform-latest-changes">
+          <div class="kg-panel__header"><div><h2 class="kg-panel__title">今日新增与变化</h2><span>新增了什么、改变了什么、影响了哪些对象</span></div><RouterLink to="/tasks">查看全部任务 →</RouterLink></div>
+          <div class="platform-change-feed"><RouterLink v-for="item in latestChanges" :key="`${item.time}-${item.title}`" :to="item.to"><time>{{ item.time }}</time><span :class="`is-${item.type}`">{{ item.type }}</span><div><strong>{{ item.title }}</strong><p>{{ item.detail }}</p><em>{{ item.domain }} · {{ item.impact }}</em></div><b>查看详情 →</b></RouterLink></div>
         </div>
-        <div class="platform-pipeline">
-          <article v-for="item in pipeline" :key="item.name" class="platform-pipeline__step">
-            <div>
-              <strong>{{ item.name }}</strong>
-              <span>{{ item.status }}</span>
-            </div>
-            <p>{{ item.desc }}</p>
-            <em>{{ item.count }}</em>
-          </article>
-        </div>
+
+        <aside class="kg-panel platform-risk-panel">
+          <div class="kg-panel__header"><div><h2 class="kg-panel__title">待我处理</h2><span>2 个批次 · 711 条异常已隔离</span></div><RouterLink to="/manual-review">查看全部任务 →</RouterLink></div>
+          <div class="platform-risk-list"><article v-for="item in managementRisks" :key="item.title" :class="`is-${item.level}`"><i /><div><span><b>{{ item.level }}</b></span><strong>{{ item.title }}</strong><p>{{ item.detail }}</p><RouterLink :to="item.to">{{ item.action }} →</RouterLink></div></article></div>
+        </aside>
       </section>
 
-      <section class="platform-overview-grid">
-        <div class="kg-panel platform-schema-panel">
-          <div class="kg-panel__header">
-            <h2 class="kg-panel__title">标准实体类型分布</h2>
-            <span>统一 Schema</span>
-          </div>
-          <div class="platform-schema-list">
-            <article v-for="item in entityDistribution" :key="item.schema" :class="`is-${item.tone}`">
-              <i></i>
-              <div>
-                <strong>{{ item.label }}</strong>
-                <span>{{ item.schema }}</span>
-              </div>
-              <em>{{ item.count }}</em>
-              <b><span :style="{ width: `${item.ratio}%` }"></span></b>
-            </article>
-          </div>
+      <section class="kg-panel platform-structure-overview">
+        <div class="kg-panel__header"><div><h2 class="kg-panel__title">当前图谱资产</h2></div><span>实体 1.28 亿 · 关系 6.42 亿 · 数据截至 10:30</span></div>
+        <div class="platform-structure-grid">
+          <div class="platform-structure-chart"><header><strong>实体分类占比</strong></header><div class="platform-donut-layout"><div class="platform-donut is-entity"><span><strong>1.28 亿</strong><em>实体总量</em></span></div><div class="platform-structure-legend"><article v-for="item in entityStructure" :key="item.schema"><span><i :style="{ background: item.tone }" />{{ item.label }}<em>{{ item.schema }}</em></span><strong>{{ item.count }}<em>{{ item.ratio }}%</em></strong></article></div></div></div>
+          <div class="platform-structure-chart"><header><strong>关系分类占比</strong></header><div class="platform-donut-layout"><div class="platform-donut is-relation"><span><strong>6.42 亿</strong><em>关系总量</em></span></div><div class="platform-structure-legend"><article v-for="item in relationStructure" :key="item.schema"><span><i :style="{ background: item.tone }" />{{ item.label }}<em>{{ item.schema }}</em></span><strong>{{ item.count }}<em>{{ item.ratio }}%</em></strong></article></div></div></div>
         </div>
-
-        <div class="kg-panel platform-relation-panel">
-          <div class="kg-panel__header">
-            <h2 class="kg-panel__title">标准关系类型分布</h2>
-            <span>事实关系 + 推理关系</span>
-          </div>
-          <div class="platform-relation-list">
-            <article v-for="item in relationDistribution" :key="item.schema">
-              <div>
-                <strong>{{ item.label }}</strong>
-                <span>{{ item.schema }}</span>
-              </div>
-              <em>{{ item.count }}</em>
-              <b><span :style="{ width: `${item.ratio}%` }"></span></b>
-            </article>
-          </div>
-        </div>
-
       </section>
     </main>
 
     <main v-else-if="activeTab === 'processing'" class="platform-content platform-processing">
       <section class="kg-panel platform-source-panel">
         <div class="kg-panel__header">
-          <h2 class="kg-panel__title">MySQL 数据源与更新策略</h2>
-          <span>选择数据来源、源库表和更新策略后创建处理批次</span>
+          <h2 class="kg-panel__title">科技要素数据库更新</h2>
+          <span>平台仅接入科技要素数据库；定时任务自动运行，此处用于人工补跑或紧急更新</span>
         </div>
         <div class="platform-processing-controls">
           <label>
-            <span>数据来源</span>
-            <select v-model="processingSourceFilter">
-              <option v-for="item in processingSourceOptions" :key="item">{{ item }}</option>
+            <span>业务域</span>
+            <select v-model="processingTaskDomain">
+              <option v-for="item in processingTaskDomainOptions" :key="item">{{ item }}</option>
             </select>
           </label>
           <label>
-            <span>更新策略</span>
-            <select v-model="processingStrategy">
-              <option v-for="item in processingStrategyOptions" :key="item">{{ item }}</option>
+            <span>数据范围</span>
+            <select v-model="processingScope">
+              <option v-for="item in processingScopeOptions" :key="item">{{ item }}</option>
             </select>
           </label>
           <label>
-            <span>任务类型</span>
-            <select v-model="processingMode">
-              <option v-for="item in processingModeOptions" :key="item">{{ item }}</option>
+            <span>执行优先级</span>
+            <select v-model="processingPriority">
+              <option v-for="item in processingPriorityOptions" :key="item">{{ item }}</option>
             </select>
           </label>
-          <button class="kg-button" type="button" :disabled="isActionLoading" @click="handleStartTask">立即更新</button>
+          <label v-if="processingScope === '指定时间范围'" class="platform-range-fields">
+            <span>时间范围</span>
+            <i><input v-model="processingStartDate" type="date" /><b>至</b><input v-model="processingEndDate" type="date" /></i>
+          </label>
+          <label v-if="processingPriority === '紧急'">
+            <span>紧急原因</span>
+            <input v-model="processingReason" placeholder="必填，用于审计与排队依据" />
+          </label>
+          <button class="kg-button" type="button" :disabled="isActionLoading || (processingPriority === '紧急' && !processingReason.trim())" @click="handleStartTask">{{ processingActionLabel }}</button>
         </div>
+        <div class="platform-update-help"><span><b>普通：</b>按提交顺序进入队列，不影响已运行任务。</span><span><b>紧急：</b>提高排队优先级，但不会中断正在执行的任务，必须填写原因。</span><span><b>创建并执行：</b>表示人工立即触发；“定时更新”由系统调度，无需人工选择。</span></div>
 
-        <table class="platform-table">
+        <div class="platform-sticky-table"><table class="platform-table">
           <thead>
-            <tr><th>连接名</th><th>源表</th><th>业务域</th><th>检查频率</th><th>最近更新时间</th><th>状态</th></tr>
+            <tr><th>业务域</th><th>数据对象</th><th>物理表</th><th>调度方式</th><th>更新频率</th><th>最近成功</th><th>状态</th><th>追溯</th></tr>
           </thead>
           <tbody>
-            <tr v-for="row in filteredMysqlSourceRows" :key="`${row.name}-${row.table}`">
-              <td>{{ row.name }}</td>
-              <td>{{ row.table }}</td>
+            <tr v-for="row in sourceRows" :key="row.table" class="is-clickable" tabindex="0" @click="openProcessDetail('processing', row.task, 'source')" @keydown.enter="openProcessDetail('processing', row.task, 'source')">
               <td>{{ row.domain }}</td>
+              <td>{{ row.object }}</td>
+              <td><code>{{ row.table }}</code></td>
+              <td>{{ row.schedule }}</td>
               <td>{{ row.frequency }}</td>
               <td>{{ row.latest }}</td>
-              <td><span class="platform-status">{{ row.status }}</span></td>
+              <td><span :class="['platform-status', `is-${row.status}`]">{{ row.status }}</span></td>
+              <td><button class="platform-trace-link" type="button" @click.stop="openProcessDetail('processing', row.task, 'source')">查看详情 →</button></td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
       </section>
 
       <section class="kg-panel platform-cleaning-flow">
@@ -769,28 +774,54 @@ const pageMeta = computed(() => {
           <span>从源库同步到标准结构化库表</span>
         </div>
         <div class="platform-cleaning-steps">
-          <article v-for="(item, index) in dataProcessingSteps" :key="item.name">
+          <article v-for="(item, index) in dataProcessingSteps" :key="item.name" class="is-clickable-card" tabindex="0" role="button" @click="openProcessDetail('processing', 'DP-20260713-0200', item.id)" @keydown.enter="openProcessDetail('processing', 'DP-20260713-0200', item.id)">
             <i>{{ index + 1 }}</i>
             <div>
               <strong>{{ item.name }}</strong>
               <p>{{ item.desc }}</p>
             </div>
             <span>{{ item.status }}</span>
+            <b class="platform-card-arrow">查看详情 →</b>
           </article>
         </div>
       </section>
 
+      <section class="kg-panel platform-quality-log">
+        <div class="kg-panel__header">
+          <h2 class="kg-panel__title">质量检验日志</h2>
+          <span>关联来源批次、质检规则和人工处理单</span>
+        </div>
+        <table class="platform-table">
+          <thead><tr><th>质检规则</th><th>检验对象</th><th>来源批次</th><th>检验数</th><th>异常数</th><th>通过率</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody><tr v-for="row in qualityLogRows" :key="row.rule" class="is-clickable" tabindex="0" @click="openProcessDetail('processing', row.batch, 'quality')" @keydown.enter="openProcessDetail('processing', row.batch, 'quality')"><td>{{ row.rule }}</td><td>{{ row.object }}</td><td>{{ row.batch }}</td><td>{{ row.checked }}</td><td>{{ row.failed }}</td><td>{{ row.rate }}</td><td><span :class="['platform-status', `is-${row.status}`]">{{ row.status }}</span></td><td><button class="platform-trace-link" type="button" @click.stop="openProcessDetail('processing', row.batch, 'quality')">查看详情 →</button></td></tr></tbody>
+        </table>
+      </section>
+
+      <section class="platform-review-notice is-warning" aria-label="数据处理异常提示">
+        <div class="platform-review-notice__icon" aria-hidden="true">!</div>
+        <div>
+          <strong>发现 385 条数据质量异常</strong>
+          <p>包含必填缺失、唯一性冲突和枚举不一致。数据处理页仅展示异常摘要，人工判定与修正在独立工作台完成。</p>
+        </div>
+        <div class="platform-review-notice__actions"><RouterLink to="/tasks?module=图谱构建&amp;batch=UPD-20260714">查看处理实例</RouterLink><RouterLink to="/manual-review?batch=UPD-20260714">进入人工处理 →</RouterLink></div>
+      </section>
+
       <section class="kg-panel platform-task-list">
         <div class="kg-panel__header">
-          <h2 class="kg-panel__title">数据处理任务队列</h2>
-          <span>记录定时任务和手动更新任务</span>
+          <h2 class="kg-panel__title">最近数据处理任务</h2>
+          <div class="platform-task-filters">
+            <select v-model="processingDomainFilter"><option v-for="item in processingDomainOptions" :key="item">{{ item }}</option></select>
+            <select v-model="processingStatusFilter"><option v-for="item in processingStatusOptions" :key="item">{{ item }}</option></select>
+            <span>{{ filteredProcessingTaskRows.length }} 个任务</span>
+            <RouterLink to="/tasks?module=数据处理">全部任务 →</RouterLink>
+          </div>
         </div>
         <table class="platform-table platform-progress-table">
           <thead>
-            <tr><th>处理批次</th><th>源库表</th><th>任务类型</th><th>触发时间</th><th>输入记录</th><th>进度</th><th>目标库表</th><th>状态</th></tr>
+            <tr><th>处理批次</th><th>源库表</th><th>触发方式</th><th>触发时间</th><th>输入记录</th><th>进度</th><th>目标库表</th><th>状态</th></tr>
           </thead>
           <tbody>
-            <tr v-for="row in filteredProcessingTaskRows" :key="row.batch">
+            <tr v-for="row in filteredProcessingTaskRows" :key="row.batch" class="is-clickable" tabindex="0" @click="openProcessDetail('processing', row.batch)" @keydown.enter="openProcessDetail('processing', row.batch)">
               <td>{{ row.batch }}</td>
               <td>{{ row.source }}</td>
               <td>{{ row.type }}</td>
@@ -803,7 +834,7 @@ const pageMeta = computed(() => {
                 </div>
               </td>
               <td>{{ row.target }}</td>
-              <td><span class="platform-status">{{ row.status }}</span></td>
+              <td><span :class="['platform-status', `is-${row.status}`]">{{ row.status }}</span></td>
             </tr>
           </tbody>
         </table>
@@ -811,13 +842,17 @@ const pageMeta = computed(() => {
     </main>
 
     <main v-else-if="activeTab === 'construction'" class="platform-content platform-construction">
+      <section class="platform-build-stats" aria-label="图谱构建统计">
+        <article v-for="item in buildStats" :key="item.label" class="is-clickable-card" tabindex="0" role="button" @click="openProcessDetail('construction', 'KG-INC-20260713-018')" @keydown.enter="openProcessDetail('construction', 'KG-INC-20260713-018')"><span>{{ item.label }}</span><strong>{{ item.value }}</strong><em>{{ item.note }}</em><b class="platform-card-arrow">查看 →</b></article>
+      </section>
+
       <section class="kg-panel platform-build-pipeline">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">结构化数据建图过程</h2>
-          <span>从标准表读取、Schema 映射、实体关系生成，到自动入库与人工审核</span>
+          <span>从标准表读取、Schema 映射、实体关系生成，到自动入库与异常分流</span>
         </div>
         <div class="platform-build-pipeline__body">
-          <article v-for="(item, index) in buildPipelineSteps" :key="item.name">
+          <article v-for="(item, index) in buildPipelineSteps" :key="item.name" class="is-clickable-card" tabindex="0" role="button" @click="openProcessDetail('construction', 'KG-INC-20260713-018', item.id)" @keydown.enter="openProcessDetail('construction', 'KG-INC-20260713-018', item.id)">
             <i>{{ index + 1 }}</i>
             <div>
               <span>{{ item.name }}</span>
@@ -825,186 +860,68 @@ const pageMeta = computed(() => {
               <p>{{ item.desc }}</p>
             </div>
             <em>{{ item.status }}</em>
+            <b class="platform-card-arrow">详情 →</b>
           </article>
         </div>
       </section>
 
       <section class="kg-panel platform-build-progress platform-build-progress--list">
         <div class="kg-panel__header">
-          <h2 class="kg-panel__title">构建任务进度</h2>
-          <span>展示结构化数据进入建图后的处理进度、候选规模和人工审核数量</span>
+          <h2 class="kg-panel__title">最近图谱构建任务</h2>
+          <div class="platform-task-filters"><span>模块页仅展示最近批次</span><RouterLink to="/tasks?module=图谱构建">全部任务 →</RouterLink></div>
         </div>
         <table class="platform-table platform-progress-table">
           <thead>
-            <tr><th>构建批次</th><th>数据域</th><th>当前阶段</th><th>实体</th><th>关系</th><th>属性</th><th>进度</th><th>待人工审核</th><th>状态</th></tr>
+            <tr><th>构建批次</th><th>数据域</th><th>当前阶段</th><th>实体</th><th>关系</th><th>属性</th><th>进度</th><th>隔离异常</th><th>状态</th></tr>
           </thead>
           <tbody>
-            <tr
-              v-for="row in taskRows"
-              :key="row.batch"
-              :class="{ 'is-active': row.batch === selectedProcessingTask.batch }"
-              @click="selectedProcessingTaskBatch = row.batch"
-            >
-              <td>{{ row.batch }}</td>
-              <td>{{ row.domain }}</td>
-              <td>{{ row.stage }}</td>
-              <td>{{ row.entities }}</td>
-              <td>{{ row.relations }}</td>
-              <td>{{ row.properties }}</td>
-              <td>
-                <div class="platform-progress-cell">
-                  <b><i :style="{ width: `${row.progress}%` }" /></b>
-                  <span>{{ row.progress }}%</span>
-                </div>
-              </td>
-              <td>{{ row.conflicts }}</td>
-              <td><span class="platform-status">{{ row.status }}</span></td>
+            <tr v-for="row in taskRows" :key="row.batch" tabindex="0" @click="openProcessDetail('construction', row.batch)" @keydown.enter="openProcessDetail('construction', row.batch)">
+              <td>{{ row.batch }}</td><td>{{ row.domain }}</td><td>{{ row.stage }}</td><td>{{ row.entities }}</td><td>{{ row.relations }}</td><td>{{ row.properties }}</td>
+              <td><div class="platform-progress-cell"><b><i :style="{ width: `${row.progress}%` }" /></b><span>{{ row.progress }}%</span></div></td>
+              <td>{{ row.conflicts }}</td><td><span :class="['platform-status', `is-${row.status}`]">{{ row.status }}</span></td>
             </tr>
           </tbody>
         </table>
       </section>
 
-      <section class="kg-panel platform-build">
+      <section class="kg-panel platform-schema-readonly">
         <div class="kg-panel__header">
-          <h2 class="kg-panel__title">人工审核对象</h2>
-          <div class="platform-segmented">
-            <button type="button" :class="{ 'is-active': activeBuildTab === 'entity' }" @click="activeBuildTab = 'entity'">实体</button>
-            <button type="button" :class="{ 'is-active': activeBuildTab === 'relation' }" @click="activeBuildTab = 'relation'">关系</button>
-            <button type="button" :class="{ 'is-active': activeBuildTab === 'property' }" @click="activeBuildTab = 'property'">属性</button>
-            <button type="button" :class="{ 'is-active': activeBuildTab === 'rule' }" @click="activeBuildTab = 'rule'">规则</button>
-          </div>
+          <h2 class="kg-panel__title">当前 Schema 摘要（只读）</h2>
+          <div class="platform-schema-head"><span>v1.8 · 当前构建批次使用的模型版本</span><RouterLink to="/schema">打开 Schema 浏览器 →</RouterLink></div>
         </div>
-
-        <div class="platform-manual-toolbar">
-          <span>筛选支持按对象名称、关系/属性关键词、数据域、处理状态和来源批次定位待处理对象。</span>
-        </div>
-
-        <div class="platform-manage-filter">
-          <label>
-            <span>名称 / 关键词</span>
-            <input v-model="buildSearchKeyword" placeholder="张明远 / 企业合作 / 论文数量" />
-          </label>
-          <label>
-            <span>数据域</span>
-            <select v-model="buildDomainFilter">
-              <option v-for="item in buildDomainOptions" :key="item">{{ item }}</option>
-            </select>
-          </label>
-          <label>
-            <span>数据状态</span>
-            <select v-model="buildStatusFilter">
-              <option>全部</option>
-              <option>待审核</option>
-              <option>自动入库</option>
-              <option>冲突数据</option>
-            </select>
-          </label>
-          <label>
-            <span>来源批次</span>
-            <select v-model="buildSourceBatch">
-              <option v-for="item in buildBatchOptions" :key="item">{{ item }}</option>
-            </select>
-          </label>
-          <button type="button" @click="handleBuildSearch">查询</button>
-        </div>
-
-        <div class="platform-build-context">
-          <strong v-if="buildAuditContext">来自人工审核：{{ buildAuditContext.title }}</strong>
-          <strong v-else>当前人工审核对象</strong>
-          <span>
-            {{ buildDomainFilter }}
-            / {{ buildSourceBatch === '全部批次' ? '全部批次' : buildSourceBatch }}
-            / {{ buildStatusFilter }}
-            / {{ buildResultCount }} 条{{ buildResultLabel }}
-          </span>
-        </div>
-
-        <table v-if="activeBuildTab === 'entity'" class="platform-table">
-          <thead><tr><th>新识别实体</th><th>类型</th><th>数据域</th><th>候选匹配</th><th>相似度</th><th>审核原因</th><th>建议操作</th><th>人工操作</th></tr></thead>
-          <tbody>
-            <tr v-for="row in filteredEntityRows" :key="row.name">
-              <td>{{ row.name }}</td><td>{{ row.type }}</td><td>{{ row.domain }}</td><td>{{ row.match }}</td><td>{{ row.score }}</td><td>{{ row.reason }}</td><td>{{ row.action }}</td>
-              <td>
-                <div class="platform-row-actions">
-                  <button type="button" @click="handleRowDetail(row.name)">查看</button>
-                  <button type="button" @click="showToast(`${row.name} 已进入编辑态`, 'info')">编辑</button>
-                  <button type="button" @click="handleAuditAction(row.name, '合并')">合并</button>
-                  <button type="button" @click="showToast(`${row.name} 已驳回`, 'warning')">删除</button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <table v-else-if="activeBuildTab === 'relation'" class="platform-table">
-          <thead><tr><th>源实体</th><th>目标实体</th><th>关系类型</th><th>数据域</th><th>证据</th><th>置信度</th><th>审核原因</th><th>状态</th><th>人工操作</th></tr></thead>
-          <tbody>
-            <tr v-for="row in filteredRelationRows" :key="`${row.source}-${row.target}-${row.relation}`">
-              <td>{{ row.source }}</td><td>{{ row.target }}</td><td>{{ row.relation }}</td><td>{{ row.domain }}</td><td>{{ row.evidence }}</td><td>{{ row.confidence }}</td><td>{{ row.reason }}</td><td>{{ row.status }}</td>
-              <td>
-                <div class="platform-row-actions">
-                  <button type="button" @click="handleRowDetail(`${row.source}-${row.target}`)">查看</button>
-                  <button type="button" @click="showToast('关系记录已进入编辑态', 'info')">编辑</button>
-                  <button type="button" @click="handleAuditAction(`${row.source}-${row.target}`, '审核')">审核</button>
-                  <button type="button" @click="showToast('关系记录已删除', 'warning')">删除</button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <table v-else-if="activeBuildTab === 'property'" class="platform-table">
-          <thead><tr><th>对象</th><th>动态属性</th><th>数据域</th><th>原值</th><th>新值</th><th>审核原因</th><th>处理规则</th><th>人工操作</th></tr></thead>
-          <tbody>
-            <tr v-for="row in filteredPropertyRows" :key="`${row.object}-${row.property}`">
-              <td>{{ row.object }}</td><td>{{ row.property }}</td><td>{{ row.domain }}</td><td>{{ row.oldValue }}</td><td>{{ row.newValue }}</td><td>{{ row.reason }}</td><td>{{ row.rule }}</td>
-              <td>
-                <div class="platform-row-actions">
-                  <button type="button" @click="handleRowDetail(row.object)">查看</button>
-                  <button type="button" @click="showToast('属性记录已进入编辑态', 'info')">编辑</button>
-                  <button type="button" @click="showToast(`${row.property} 已回滚至 ${row.oldValue}`, 'info')">回滚</button>
-                  <button type="button" @click="showToast('属性记录已删除', 'warning')">删除</button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <table v-else class="platform-table">
-          <thead><tr><th>规则名称</th><th>规则类型</th><th>配置方式</th><th>阈值</th><th>状态</th><th>操作</th></tr></thead>
-          <tbody>
-            <tr v-for="row in ruleRows" :key="row.name">
-              <td>{{ row.name }}</td><td>{{ row.type }}</td><td>{{ row.method }}</td><td>{{ row.threshold }}</td><td>{{ row.status }}</td>
-              <td>
-                <div class="platform-row-actions">
-                  <button type="button" @click="handleRowDetail(row.name)">查看</button>
-                  <button type="button" @click="showToast('规则配置已进入编辑态', 'info')">编辑</button>
-                  <button type="button" @click="showToast(`${row.name} 已停用`, 'warning')">停用</button>
-                  <button type="button" @click="showToast('规则已删除', 'warning')">删除</button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
+        <table class="platform-table">
+          <thead><tr><th>类型</th><th>Schema 名称</th><th>字段 / 属性</th><th>映射与生成规则</th><th>权限</th></tr></thead>
+          <tbody><tr v-for="row in readonlySchemaRows" :key="row.name" class="is-clickable" tabindex="0" @click="openProcessDetail('construction', 'KG-INC-20260713-018', 'schema')" @keydown.enter="openProcessDetail('construction', 'KG-INC-20260713-018', 'schema')"><td>{{ row.type }}</td><td><code>{{ row.name }}</code></td><td>{{ row.fields }}</td><td>{{ row.rule }}</td><td><button class="platform-trace-link" type="button" @click.stop="openProcessDetail('construction', 'KG-INC-20260713-018', 'schema')">查看 →</button></td></tr></tbody>
         </table>
       </section>
+
+      <section class="platform-review-notice" aria-label="图谱构建人工处理提示">
+        <div class="platform-review-notice__icon" aria-hidden="true">!</div>
+        <div>
+          <strong>326 个候选对象需要人工确认</strong>
+          <p>86 个实体冲突、198 条低置信度关系、42 项属性异常已转入人工处理平台，不在构建页直接编辑。</p>
+        </div>
+        <div class="platform-review-notice__actions"><RouterLink to="/tasks?module=图谱构建&amp;batch=UPD-20260714">查看处理实例</RouterLink><RouterLink to="/manual-review?batch=UPD-20260714">进入人工处理 →</RouterLink></div>
+      </section>
+
     </main>
 
     <main v-else-if="activeTab === 'query'" class="platform-content platform-query">
       <section class="kg-panel platform-query-form">
         <div class="kg-panel__header">
-          <h2 class="kg-panel__title">统一图查询入口</h2>
-          <button class="kg-button" type="button" :disabled="isActionLoading" @click="handleQuery">查询</button>
+          <h2 class="kg-panel__title">自然语言图谱检索</h2>
+          <button class="kg-button" type="button" :disabled="isActionLoading" @click="handleQuery">检索子图</button>
         </div>
         <div class="platform-form-grid">
+          <label class="platform-query-question">
+            <span>问题或查询要求</span>
+            <textarea v-model="queryKeyword" rows="2" placeholder="输入一句话或一段查询要求，例如：分析某专家近五年的合作网络。" />
+          </label>
           <label>
             <span>图谱范围</span>
             <select v-model="selectedQueryType">
               <option v-for="item in queryTypes" :key="item">{{ item }}</option>
             </select>
-          </label>
-          <label>
-            <span>关键词</span>
-            <input v-model="queryKeyword" />
           </label>
           <label>
             <span>关系类型</span>
@@ -1058,12 +975,13 @@ const pageMeta = computed(() => {
       <aside class="kg-panel platform-detail">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">
-            {{ queryDetailMode === 'relation' ? '关系结构化结果' : queryDetailMode === 'entity' ? '实体结构化结果' : '查询结果摘要' }}
+            {{ queryDetailMode === 'provenance' ? '数据溯源' : queryDetailMode === 'relation' ? '关系结构化结果' : queryDetailMode === 'entity' ? '实体结构化结果' : '查询结果摘要' }}
           </h2>
           <div class="platform-detail__tabs" aria-label="图谱详情类型">
             <button :class="{ 'is-active': queryDetailMode === 'summary' }" type="button" @click="queryDetailMode = 'summary'">摘要</button>
             <button :class="{ 'is-active': queryDetailMode === 'entity' }" type="button" @click="queryDetailMode = 'entity'">实体</button>
             <button :class="{ 'is-active': queryDetailMode === 'relation' }" type="button" @click="queryDetailMode = 'relation'">关系</button>
+            <button :class="{ 'is-active': queryDetailMode === 'provenance' }" type="button" @click="queryDetailMode = 'provenance'">溯源</button>
           </div>
         </div>
         <div v-if="queryDetailMode === 'summary'" class="platform-detail__body">
@@ -1085,7 +1003,7 @@ const pageMeta = computed(() => {
             </ul>
           </div>
         </div>
-        <div v-else-if="queryDetailMode === 'entity'" class="platform-detail__body">
+        <div v-else-if="queryDetailMode === 'entity' && selectedQueryNode" class="platform-detail__body">
           <dl>
             <div v-for="([label, value], index) in selectedQueryNodeRows" :key="`${label}-${index}`">
               <dt>{{ label }}</dt>
@@ -1100,7 +1018,7 @@ const pageMeta = computed(() => {
             </ul>
           </div>
         </div>
-        <div v-else class="platform-detail__body">
+        <div v-else-if="queryDetailMode === 'relation' && selectedQueryEdge" class="platform-detail__body">
           <dl>
             <div v-for="([label, value], index) in selectedQueryEdgeRows" :key="`${label}-${index}`">
               <dt>{{ label }}</dt>
@@ -1114,6 +1032,43 @@ const pageMeta = computed(() => {
               <li>完整关系、来源说明和置信度在右侧详情中展开。</li>
             </ul>
           </div>
+        </div>
+        <div v-else-if="queryDetailMode === 'provenance' && selectedQueryProvenance && selectedQueryProvenanceTarget" class="platform-detail__body">
+          <section class="platform-provenance" aria-label="图谱数据溯源">
+            <div class="platform-provenance__title">
+              <span>当前追溯对象</span>
+              <em>{{ selectedQueryProvenanceTarget.kind }}</em>
+            </div>
+            <div class="platform-provenance__target">
+              <strong>{{ selectedQueryProvenanceTarget.name }}</strong>
+              <span>{{ selectedQueryProvenanceTarget.kind }}</span>
+            </div>
+            <template v-if="selectedQueryNode">
+              <h3 class="platform-provenance__section-title">实体溯源</h3>
+              <dl class="platform-provenance__source">
+                <div><dt>实体类型</dt><dd>{{ selectedQueryProvenanceTarget.type }}</dd></div>
+                <div><dt>源数据表</dt><dd><code>{{ selectedQueryProvenance.evidences[0]?.technicalTable }}</code></dd></div>
+                <div><dt>字段标识 ID</dt><dd><code>{{ selectedQueryProvenance.evidences[0]?.fieldIdentifier }}</code></dd></div>
+                <div><dt>构建任务 ID</dt><dd><code>{{ selectedQueryProvenance.task.instanceId }}</code></dd></div>
+              </dl>
+              <div class="platform-provenance__task-meta"><button type="button" @click="openSelectedProcessingInstance">查看构建详情 →</button></div>
+            </template>
+            <template v-else-if="selectedQueryProvenance.relationEndpoints?.length">
+              <h3 class="platform-provenance__section-title">关系溯源</h3>
+              <dl class="platform-provenance__source"><div><dt>关系类型</dt><dd>{{ selectedQueryProvenanceTarget.type }}</dd></div></dl>
+              <h3 class="platform-provenance__section-title">两端实体来源</h3>
+              <div class="platform-provenance__evidence-list">
+                <article v-for="endpoint in selectedQueryProvenance.relationEndpoints" :key="endpoint.role">
+                  <header><strong>{{ endpoint.role }} · {{ endpoint.name }}</strong></header>
+                  <p><b>实体类型：{{ endpoint.entityType }}</b></p>
+                  <span>源数据表：<code>{{ endpoint.technicalTable }}</code></span>
+                  <span>字段标识 ID：<code>{{ endpoint.fieldIdentifier }}</code></span>
+                </article>
+              </div>
+              <dl class="platform-provenance__source"><div><dt>构建任务 ID</dt><dd><code>{{ selectedQueryProvenance.task.instanceId }}</code></dd></div></dl>
+              <div class="platform-provenance__task-meta"><button type="button" @click="openSelectedProcessingInstance">查看构建详情 →</button></div>
+            </template>
+          </section>
         </div>
       </aside>
     </main>
@@ -1195,7 +1150,7 @@ const pageMeta = computed(() => {
             <dl class="platform-service-info">
               <div><dt>命中服务</dt><dd>{{ activeService.title }}</dd></div>
               <div><dt>状态码</dt><dd>0 / success</dd></div>
-              <div><dt>更新时间</dt><dd>2026-07-06 10:30</dd></div>
+              <div><dt>更新时间</dt><dd>2026-07-13 10:30</dd></div>
             </dl>
           </div>
         </section>
@@ -1296,31 +1251,14 @@ print(response.json())</pre>
       </template>
     </main>
 
-    <KgDetailModal
-      :open="detailModalOpen"
-      :payload="detailModalPayload"
-      @close="detailModalOpen = false"
-    />
+    <button v-if="selectedAssetChange" class="asset-change-mask" type="button" aria-label="关闭新增数据详情" @click="selectedAssetChange = null" />
+    <aside v-if="selectedAssetChange && activeAssetOverview" class="asset-change-drawer">
+      <header><div><span>今日图谱数据变化</span><h2>{{ activeAssetOverview.title }}新增明细</h2><p>{{ activeAssetOverview.addedLabel }} {{ activeAssetOverview.added }} · 数据更新至 10:30</p></div><button type="button" @click="selectedAssetChange = null">×</button></header>
+      <section class="asset-change-summary"><article><span>当前总量</span><strong>{{ activeAssetOverview.total }}</strong></article><article><span>{{ activeAssetOverview.addedLabel }}</span><strong>{{ activeAssetOverview.added }}</strong></article></section>
+      <div class="asset-change-table"><table><thead><tr><th>数据类型</th><th>具体对象</th><th>变更内容</th><th>来源</th><th>识别时间</th></tr></thead><tbody><tr v-for="row in assetChangeRows[selectedAssetChange]" :key="`${row.object}-${row.time}`"><td>{{ row.type }}</td><td><strong>{{ row.object }}</strong></td><td>{{ row.change }}</td><td><code>{{ row.source }}</code></td><td>{{ row.time }}</td></tr></tbody></table></div>
+      <footer><span>这里展示部分示例，完整数据可按任务批次继续追溯。</span><RouterLink to="/tasks">查看对应更新任务 →</RouterLink></footer>
+    </aside>
 
-    <div v-if="traceModalOpen" class="platform-modal-mask" @click.self="traceModalOpen = false">
-      <section class="kg-panel platform-trace-modal" role="dialog" aria-modal="true">
-        <div class="kg-panel__header">
-          <h2 class="kg-panel__title">执行过程追踪</h2>
-          <span>{{ selectedProcessingTask.batch }} / {{ selectedProcessingTask.stage }}</span>
-          <button class="platform-modal-close" type="button" @click="traceModalOpen = false">关闭</button>
-        </div>
-        <div class="platform-timeline">
-          <article v-for="item in pipeline" :key="item.name">
-            <i></i>
-            <div>
-              <strong>{{ item.name }}</strong>
-              <p>{{ item.desc }}</p>
-            </div>
-            <span>{{ item.count }}</span>
-          </article>
-        </div>
-      </section>
-    </div>
   </div>
 </template>
 
@@ -1341,16 +1279,16 @@ print(response.json())</pre>
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 18px;
-  min-height: 92px;
-  padding: 22px 28px;
+  gap: 14px;
+  min-height: 62px;
+  padding: 11px 18px;
   border: 1px solid rgba(132, 178, 246, 0.86);
   border-radius: 12px;
   background:
     linear-gradient(135deg, rgba(216, 235, 255, 0.98) 0%, rgba(237, 247, 255, 0.98) 48%, rgba(211, 242, 255, 0.94) 100%),
     #e5f1ff;
   box-shadow:
-    0 16px 34px rgba(48, 105, 194, 0.18),
+    0 8px 22px rgba(48, 105, 194, 0.13),
     inset 0 1px 0 rgba(255, 255, 255, 0.96);
 }
 
@@ -1373,30 +1311,43 @@ print(response.json())</pre>
 .platform-hero h1 {
   margin: 0;
   color: #10264c;
-  font-size: 28px;
-  line-height: 36px;
+  font-size: 22px;
+  line-height: 28px;
   font-weight: 700;
 }
 
 .platform-hero__main {
   display: grid;
-  gap: 6px;
+  gap: 1px;
   min-width: 0;
 }
 
 .platform-hero__subtitle {
   margin: 0;
   color: #4b6288;
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 12px;
+  line-height: 18px;
 }
+
+.platform-hero__flow { display:flex;align-items:center;gap:6px;margin-top:4px;color:#607493;font-size:10px; }
+.platform-hero__flow span { padding:2px 7px;border:1px solid rgba(126,168,229,.65);border-radius:99px;background:rgba(255,255,255,.58); }
+.platform-hero__flow i { color:#165dff;font-style:normal; }
+
+.platform-hero__actions { display:flex;align-items:center;gap:8px;margin-left:auto; }
+.platform-hero__actions span { display:inline-flex;align-items:center;gap:7px;margin-right:4px;color:#526783;font-size:12px; }
+.platform-hero__actions span i { width:8px;height:8px;border-radius:50%;background:#12b76a;box-shadow:0 0 0 4px rgba(18,183,106,.12); }
+.platform-hero__actions a { height:32px;padding:0 12px;border:1px solid #9ec2f7;border-radius:6px;background:rgba(255,255,255,.72);color:#165dff;font-size:12px;line-height:32px;text-decoration:none; }
+.platform-hero__actions a:last-child { border-color:#165dff;background:#165dff;color:#fff; }
 
 .platform-page-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   min-height: 36px;
   padding: 0 2px 2px;
 }
+
+.platform-page-head__action { height:30px;padding:0 11px;border:1px solid #9ec2f7;border-radius:6px;background:#fff;color:#165dff;font-size:11px;line-height:30px;text-decoration:none; }
 
 .platform-page-head h1 {
   margin: 0;
@@ -1421,15 +1372,27 @@ print(response.json())</pre>
 
 .platform-overview {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: repeat(3, auto);
   gap: 14px;
 }
 
 .platform-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
 }
+
+.platform-stage-overview__groups { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px; }
+.platform-stage-group { overflow:hidden;border:1px solid #d6e5f8;border-radius:8px;background:#f8fbff; }
+.platform-stage-group>header { display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #dce8f8;background:#fff; }
+.platform-stage-group>header strong { color:#20324e;font-size:13px; }
+.platform-stage-group>header a { color:#165dff;font-size:11px;text-decoration:none; }
+.platform-stage-group>div { display:grid;grid-template-columns:repeat(4,minmax(0,1fr)); }
+.platform-stage-group section { display:grid;gap:4px;padding:13px 14px;border-right:1px solid #e1ebf7; }
+.platform-stage-group section:last-child { border-right:0; }
+.platform-stage-group section span { color:#687892;font-size:11px; }
+.platform-stage-group section strong { color:#10264c;font-size:20px; }
+.platform-stage-group section em { overflow:hidden;color:#8290a7;font-size:10px;font-style:normal;text-overflow:ellipsis;white-space:nowrap; }
 
 .platform-metric {
   position: relative;
@@ -1483,12 +1446,71 @@ print(response.json())</pre>
   white-space: nowrap;
 }
 
+.platform-metric>b { position:absolute;right:17px;top:17px;color:#7890b5;font-size:11px;font-weight:600; }
+
 .platform-metric.is-blue strong { color: #165dff; }
 .platform-metric.is-green strong { color: #00a870; }
 .platform-metric.is-purple strong { color: #722ed1; }
 .platform-metric.is-orange strong { color: #ff7d00; }
+.platform-metric.is-red strong { color: #d92d20; }
 
-.platform-pipeline-panel .kg-panel__header span,
+.platform-summary-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px; }
+.platform-summary-card { position:relative;min-width:0;overflow:hidden; }
+.platform-summary-card::after { position:absolute;right:-35px;bottom:-55px;width:130px;height:130px;border-radius:50%;background:rgba(22,93,255,.045);content:"";pointer-events:none; }
+.platform-summary-card>header { display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 15px;border-bottom:1px solid #dce8f8;background:rgba(255,255,255,.75); }
+.platform-summary-card>header>div { display:grid;gap:4px; }.platform-summary-card>header>div>strong { color:#263b5a;font-size:13px; }
+.platform-summary-card>header span { display:flex;align-items:center;gap:5px;color:#067647;font-size:9px; }.platform-summary-card>header span i { width:6px;height:6px;border-radius:50%;background:#12b76a;box-shadow:0 0 0 3px #dcfae6; }
+.platform-summary-card>header span.warning { color:#b42318; }.platform-summary-card>header span.warning i { background:#d92d20;box-shadow:0 0 0 3px #fee4e2; }
+.platform-summary-card>header a,.platform-summary-card>header button { padding:0;border:0;background:transparent;color:#165dff;font-size:10px;text-decoration:none;white-space:nowrap;cursor:pointer; }
+.platform-summary-card__main { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));min-height:112px;background:#fff; }
+.platform-summary-card__main section { display:flex;justify-content:center;gap:5px;padding:20px 18px;border-right:1px solid #e3ebf6;flex-direction:column; }.platform-summary-card__main section:last-child { border-right:0; }
+.platform-summary-card__main strong { color:#165dff;font-size:34px;line-height:40px;letter-spacing:-.5px; }.platform-summary-card.is-relation .platform-summary-card__main strong { color:#7a5af8; }.platform-summary-card.is-property .platform-summary-card__main strong { color:#f79009; }.platform-summary-card .platform-summary-card__main .is-added strong { color:#079455; }
+.platform-summary-card__main span { color:#66758f;font-size:12px; }
+.platform-summary-card__items { position:relative;z-index:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:10px 8px;background:#f8fbff; }
+.platform-summary-card__items>a { display:grid;gap:3px;padding:2px 8px;border-right:1px solid #e1eaf5;color:inherit;text-decoration:none;transition:background-color .2s ease; }.platform-summary-card__items>a:last-child { border-right:0; }.platform-summary-card__items>a:hover { background:#eef5ff; }
+.platform-summary-card__items em { overflow:hidden;color:#8290a5;font-size:8px;font-style:normal;text-overflow:ellipsis;white-space:nowrap; }.platform-summary-card__items strong { overflow:hidden;color:#344861;font-size:10px;text-overflow:ellipsis;white-space:nowrap; }
+
+.platform-overview-main { display:grid;grid-template-columns:minmax(0,1.65fr) minmax(360px,.72fr);gap:14px; }
+.platform-latest-changes,.platform-risk-panel { min-width:0;overflow:hidden; }
+.platform-latest-changes .kg-panel__header>div,.platform-risk-panel .kg-panel__header>div { display:grid;gap:2px; }.platform-latest-changes .kg-panel__header span,.platform-risk-panel .kg-panel__header span { color:#7b8aa1;font-size:10px; }.platform-latest-changes .kg-panel__header>a,.platform-risk-panel .kg-panel__header>a { color:#165dff;font-size:10px;text-decoration:none; }
+.platform-change-feed { display:grid; }
+.platform-change-feed>a { display:grid;grid-template-columns:48px 44px minmax(0,1fr) 70px;align-items:center;gap:10px;min-height:70px;padding:10px 14px;border-bottom:1px solid #e4ecf6;background:#fff;color:#344761;text-decoration:none; }
+.platform-change-feed>a:last-child { border-bottom:0; }.platform-change-feed>a:hover { background:#f4f8ff; }
+.platform-change-feed time { color:#71819a;font-size:10px; }.platform-change-feed>a>span { justify-self:start;padding:3px 7px;border-radius:999px;background:#eaf2ff;color:#165dff;font-size:8px; }.platform-change-feed>a>span.is-新增 { background:#e9f8ef;color:#067647; }.platform-change-feed>a>span.is-对齐 { background:#f0edff;color:#6941c6; }.platform-change-feed>a>span.is-质量 { background:#fff3df;color:#b54708; }.platform-change-feed>a>span.is-Schema { background:#edf2f7;color:#475467; }
+.platform-change-feed>a>div { display:grid;gap:3px;min-width:0; }.platform-change-feed>a>div strong { overflow:hidden;color:#253752;font-size:11px;text-overflow:ellipsis;white-space:nowrap; }.platform-change-feed>a>div p { margin:0;color:#62728a;font-size:9px;line-height:15px; }.platform-change-feed>a>div em { color:#8a97aa;font-size:8px;font-style:normal; }.platform-change-feed>a>b { color:#165dff;font-size:9px;font-weight:500;white-space:nowrap; }
+
+.platform-management-focus { display:grid;grid-template-columns:minmax(0,1.65fr) minmax(340px,.72fr);gap:14px; }
+.platform-change-panel,.platform-risk-panel,.platform-trend-panel { min-width:0;overflow:hidden; }
+.platform-change-panel .kg-panel__header>div,.platform-risk-panel .kg-panel__header>div,.platform-trend-panel .kg-panel__header>div,.platform-recent-tasks .kg-panel__header>div { display:grid;gap:2px; }
+.platform-change-panel .kg-panel__header span,.platform-risk-panel .kg-panel__header span,.platform-trend-panel .kg-panel__header span,.platform-recent-tasks .kg-panel__header span { color:#7b8aa1;font-size:10px; }
+.platform-change-panel .kg-panel__header>a,.platform-risk-panel .kg-panel__header>a { color:#165dff;font-size:11px;text-decoration:none; }
+.platform-change-stats { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-bottom:1px solid #dde8f5; }
+.platform-change-stats article { position:relative;display:grid;gap:4px;padding:13px 15px;border-right:1px solid #e2eaf5;background:#fff; }
+.platform-change-stats article:last-child { border-right:0; }
+.platform-change-stats article::before { position:absolute;top:14px;left:0;width:3px;height:30px;border-radius:0 3px 3px 0;background:#2e90fa;content:""; }
+.platform-change-stats article.is-purple::before { background:#7a5af8; }.platform-change-stats article.is-green::before { background:#12b76a; }.platform-change-stats article.is-orange::before { background:#f79009; }
+.platform-change-stats span { color:#66758e;font-size:10px; }.platform-change-stats strong { color:#183153;font-size:20px; }.platform-change-stats em { color:#8a97aa;font-size:9px;font-style:normal; }
+.platform-change-body { display:grid;grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr);min-height:210px; }
+.platform-change-body>section { padding:13px 15px; }.platform-change-body>aside { padding:13px 14px;border-left:1px solid #e1eaf5;background:#f9fbfe; }
+.platform-change-body header { display:flex;align-items:center;justify-content:space-between;margin-bottom:10px; }.platform-change-body header>strong { color:#344661;font-size:11px; }.platform-change-body header>span,.platform-change-body header>a { color:#8290a5;font-size:9px;text-decoration:none; }
+.platform-change-ranking { display:grid;gap:8px; }.platform-change-ranking article { display:grid;grid-template-columns:minmax(150px,.8fr) minmax(170px,1fr);align-items:center;gap:12px; }
+.platform-change-ranking article>span { display:grid;grid-template-columns:7px minmax(0,1fr);column-gap:8px; }.platform-change-ranking article>span>i { grid-row:1/3;width:7px;height:7px;margin-top:5px;border-radius:50%; }.platform-change-ranking article>span b { font-size:10px; }.platform-change-ranking article>span em { color:#8491a5;font-size:8px;font-style:normal; }
+.platform-change-ranking article>div { display:grid;grid-template-columns:minmax(70px,1fr) 62px;align-items:center;gap:8px; }.platform-change-ranking article>div>i { height:6px;overflow:hidden;border-radius:99px;background:#eaf0f8; }.platform-change-ranking article>div>i b { display:block;height:100%;border-radius:inherit; }.platform-change-ranking article>div strong { color:#40536f;font-size:10px;text-align:right; }
+.platform-change-body>aside article { display:grid;grid-template-columns:25px minmax(0,1fr);gap:9px;padding:9px 0;border-bottom:1px solid #e6edf6; }.platform-change-body>aside article:last-child { border-bottom:0; }
+.platform-change-body>aside article>i { display:grid;place-items:center;width:23px;height:23px;border-radius:50%;background:#eaf2ff;color:#165dff;font-size:10px;font-style:normal; }.platform-change-body>aside article>i.success { background:#dcfae6;color:#067647; }.platform-change-body>aside article>i.warning { background:#fef0c7;color:#b54708; }
+.platform-change-body>aside article>span { display:grid;gap:3px; }.platform-change-body>aside article strong { color:#344661;font-size:10px; }.platform-change-body>aside article em { color:#7b899e;font-size:9px;font-style:normal; }
+
+.platform-risk-list { display:grid; }.platform-risk-list article { position:relative;display:grid;grid-template-columns:9px minmax(0,1fr);gap:10px;min-height:88px;padding:14px;border-bottom:1px solid #e3ebf6;background:#fff; }.platform-risk-list article:last-child { border-bottom:0; }
+.platform-risk-list article>i { width:8px;height:8px;margin-top:5px;border-radius:50%;background:#f79009;box-shadow:0 0 0 4px #fef0c7; }.platform-risk-list article.is-严重>i { background:#d92d20;box-shadow:0 0 0 4px #fee4e2; }
+.platform-risk-list article>div { display:grid;grid-template-columns:1fr auto;gap:3px 8px; }.platform-risk-list article span { grid-column:1/3; }.platform-risk-list article span b { padding:2px 6px;border-radius:99px;background:#fff3df;color:#b54708;font-size:8px; }.platform-risk-list article.is-严重 span b { background:#fee4e2;color:#b42318; }
+.platform-risk-list article strong { grid-column:1/3;color:#253752;font-size:11px; }.platform-risk-list article p { grid-column:1;margin:0;color:#7b899e;font-size:9px;line-height:15px; }.platform-risk-list article a { align-self:end;color:#165dff;font-size:9px;text-decoration:none;white-space:nowrap; }
+
+.platform-monitor-grid { display:grid;grid-template-columns:minmax(0,1fr) minmax(480px,1fr);gap:14px; }
+.platform-trend-legend { display:flex!important;align-items:center;gap:10px!important; }.platform-trend-legend span { display:flex;align-items:center;gap:5px; }.platform-trend-legend i { width:7px;height:7px;border-radius:2px;background:#2e90fa; }.platform-trend-legend span:last-child i { background:#7a5af8; }
+.platform-trend-chart { display:grid;grid-template-columns:repeat(7,1fr);align-items:end;height:225px;padding:20px 18px 13px;background:linear-gradient(to top,rgba(220,232,248,.7) 1px,transparent 1px);background-size:100% 25%; }
+.platform-trend-chart article { display:grid;grid-template-rows:160px auto auto;justify-items:center;gap:4px;height:100%; }.platform-trend-chart article>div { display:flex;align-items:end;justify-content:center;gap:5px;width:100%;height:100%; }.platform-trend-chart article>div i { width:14px;min-height:8px;border-radius:4px 4px 1px 1px;background:linear-gradient(180deg,#2e90fa,#84caff); }.platform-trend-chart article>div i:last-child { background:linear-gradient(180deg,#7a5af8,#bdb4fe); }.platform-trend-chart article strong { color:#4e607a;font-size:9px; }.platform-trend-chart article span { color:#8290a5;font-size:9px; }
+.platform-monitor-grid .platform-recent-tasks .platform-table th,.platform-monitor-grid .platform-recent-tasks .platform-table td { padding:9px 11px;font-size:10px; }.platform-monitor-grid .platform-recent-tasks td small { font-size:8px; }
+
 .platform-query-graph .kg-panel__header span,
 .platform-service-graph .kg-panel__header span,
 .platform-processing-flow .kg-panel__header span,
@@ -1497,48 +1519,6 @@ print(response.json())</pre>
   font-size: 14px;
 }
 
-.platform-pipeline {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
-  padding: 16px;
-}
-
-.platform-pipeline__step {
-  position: relative;
-  display: grid;
-  gap: 7px;
-  min-height: 106px;
-  padding: 16px;
-  border: 1px solid #e0ebfb;
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, #ffffff, #f8fbff);
-}
-
-.platform-pipeline__step:not(:last-child)::after {
-  position: absolute;
-  top: 50%;
-  right: -10px;
-  width: 10px;
-  height: 1px;
-  background: #9bc2ff;
-  content: "";
-}
-
-.platform-pipeline__step div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.platform-pipeline__step strong {
-  font-size: 16px;
-  line-height: 24px;
-}
-
-.platform-pipeline__step div span,
 .platform-status {
   display: inline-flex;
   align-items: center;
@@ -1551,19 +1531,49 @@ print(response.json())</pre>
   white-space: nowrap;
 }
 
-.platform-pipeline__step p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 22px;
-}
+.platform-operations-grid { display:grid;grid-template-columns:minmax(0,1.7fr) minmax(320px,.8fr);gap:14px; }
+.platform-recent-tasks,.platform-alert-overview { min-width:0;overflow:hidden; }
+.platform-recent-tasks .kg-panel__header a,.platform-alert-overview .kg-panel__header a { color:#165dff;font-size:12px;text-decoration:none; }
+.platform-recent-tasks td small { display:block;margin-top:2px;color:#8290a7;font-size:10px; }
+.platform-status.is-阻断 { background:#fee4e2;color:#b42318; }
+.platform-status.is-成功,.platform-status.is-完成,.platform-status.is-正常 { background:#dcfae6;color:#067647; }
+.platform-status.is-运行中 { background:#eaf2ff;color:#165dff; }
+.platform-status.is-异常,.platform-status.is-告警 { background:#fef0c7;color:#b54708; }
+.platform-status.is-更新中,.platform-status.is-排队 { background:#eaf2ff;color:#165dff; }
+.platform-alert-overview { display:grid;grid-template-rows:auto repeat(3,auto) 1fr; }
+.platform-alert-overview>button { display:grid;grid-template-columns:8px minmax(0,1fr) 14px;align-items:start;gap:10px;padding:12px 14px;border:0;border-bottom:1px solid #e3ebf7;background:rgba(255,255,255,.64);text-align:left;cursor:pointer; }
+.platform-alert-overview>button:hover { background:#f4f8ff; }
+.platform-alert-overview>button>i { width:7px;height:7px;margin-top:5px;border-radius:50%;background:#f79009; }
+.platform-alert-overview>button>i.is-严重 { background:#d92d20;box-shadow:0 0 0 4px #fee4e2; }
+.platform-alert-overview>button>span { display:grid;gap:3px;min-width:0; }
+.platform-alert-overview>button b { color:#8a97aa;font-size:10px; }
+.platform-alert-overview>button strong { overflow:hidden;color:#253752;font-size:12px;text-overflow:ellipsis;white-space:nowrap; }
+.platform-alert-overview>button em { color:#71809a;font-size:10px;font-style:normal; }
+.platform-alert-overview>button u { align-self:center;color:#8da0ba;font-size:20px;text-decoration:none; }
+.platform-alert-overview__review { align-self:end;justify-self:center;margin:12px;color:#165dff;font-size:12px;text-decoration:none; }
 
-.platform-pipeline__step em {
-  color: var(--text-primary);
-  font-size: 19px;
-  font-style: normal;
-  font-weight: 600;
-}
+.platform-structure-overview { overflow:hidden; }
+.platform-structure-overview>.kg-panel__header>span { color:#71809a;font-size:11px; }
+.platform-structure-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr)); }
+.platform-structure-chart { padding:15px 18px; }
+.platform-structure-chart:first-child { border-right:1px solid #dce8f8; }
+.platform-structure-chart header { display:flex;align-items:center;justify-content:space-between;margin-bottom:8px; }
+.platform-structure-chart header>strong { color:#253752;font-size:13px; }
+.platform-structure-chart header>a { color:#165dff;font-size:11px;text-decoration:none; }
+.platform-donut-layout { display:grid;grid-template-columns:170px minmax(0,1fr);align-items:center;gap:20px;min-height:190px; }
+.platform-donut { position:relative;display:grid;place-items:center;width:154px;height:154px;border-radius:50%; }
+.platform-donut::after { position:absolute;inset:25px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px #e5edf8;content:""; }
+.platform-donut.is-entity { background:conic-gradient(#2e90fa 0 34%,#7a5af8 34% 57%,#12b76a 57% 74%,#f79009 74% 85%,#98a2b3 85% 100%); }
+.platform-donut.is-relation { background:conic-gradient(#165dff 0 32%,#2e90fa 32% 52%,#06aed4 52% 70%,#7a5af8 70% 84%,#98a2b3 84% 100%); }
+.platform-donut>span { position:relative;z-index:1;display:grid;gap:2px;text-align:center; }
+.platform-donut>span strong { color:#10264c;font-size:19px; }
+.platform-donut>span em { color:#8290a7;font-size:10px;font-style:normal; }
+.platform-structure-legend article { display:grid;grid-template-columns:minmax(0,1fr) 100px;align-items:center;gap:10px;min-height:34px;border-bottom:1px solid #edf2f8; }
+.platform-structure-legend article:last-child { border-bottom:0; }
+.platform-structure-legend article>span { display:flex;align-items:center;gap:7px;min-width:0;color:#40516c;font-size:11px; }
+.platform-structure-legend article>span>i { flex:0 0 auto;width:8px;height:8px;border-radius:50%; }
+.platform-structure-legend article em { overflow:hidden;color:#98a2b3;font-size:9px;font-style:normal;text-overflow:ellipsis;white-space:nowrap; }
+.platform-structure-legend article>strong { display:flex;justify-content:space-between;gap:7px;color:#40516c;font-size:11px; }
 
 .platform-table {
   width: 100%;
@@ -1658,8 +1668,11 @@ print(response.json())</pre>
 
 .platform-source-panel {
   grid-column: 1 / -1;
-  min-height: 258px;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  height: 500px;
+  min-height: 500px;
+  overflow: hidden;
 }
 
 .platform-processing-overview {
@@ -1768,8 +1781,8 @@ print(response.json())</pre>
 }
 
 .platform-processing-controls {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr)) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: end;
   gap: 10px;
   padding: 12px 14px;
@@ -1777,11 +1790,95 @@ print(response.json())</pre>
   background: rgba(248, 251, 255, 0.72);
 }
 
+.platform-quality-log {
+  grid-column: 1 / -1;
+  overflow: auto;
+}
+
+.platform-trace-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.platform-table tr.is-clickable { cursor: pointer; }
+.platform-table tr.is-clickable:hover td { background: #f0f6ff; }
+.platform-table tr.is-clickable:focus-visible { outline: 2px solid #165dff; outline-offset: -2px; }
+.is-clickable-card { cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.is-clickable-card:hover,.is-clickable-card:focus-visible { border-color: #7aa9ee!important; box-shadow: 0 8px 20px rgba(22,93,255,.12)!important; transform: translateY(-1px); outline: none; }
+.platform-card-arrow { color: #165dff!important; font-size: 11px!important; font-weight: 600!important; white-space: nowrap; }
+.platform-cleaning-steps .platform-card-arrow,.platform-build-pipeline__body .platform-card-arrow { grid-column: 2; justify-self: end; }
+.platform-build-stats .platform-card-arrow { justify-self: end; }
+
+.platform-task-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.platform-task-filters select {
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid #bdd7ff;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text-primary);
+}
+.platform-task-filters a { color:#165dff;font-size:11px;text-decoration:none;white-space:nowrap; }
+
+.platform-review-notice {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 86px;
+  padding: 15px 18px;
+  border: 1px solid #b2ccff;
+  border-radius: 9px;
+  background: linear-gradient(90deg, #eff4ff, #f8fbff);
+  box-shadow: 0 8px 20px rgba(48, 105, 194, .08);
+}
+
+.platform-review-notice.is-warning {
+  border-color: #fedf89;
+  background: linear-gradient(90deg, #fffaeb, #fffdf7);
+}
+
+.platform-review-notice__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #165dff;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.platform-review-notice.is-warning .platform-review-notice__icon { background: #f79009; }
+.platform-review-notice strong { color: #10264c; font-size: 15px; }
+.platform-review-notice p { margin: 5px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 20px; }
+.platform-review-notice__actions { display: flex; align-items: center; gap: 8px; }
+.platform-review-notice__actions button,.platform-review-notice__actions a { display: inline-flex; align-items: center; height: 34px; padding: 0 13px; border: 1px solid #165dff; border-radius: 6px; background: #fff; color: #165dff; font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.platform-review-notice__actions a { background: #165dff; color: #fff; }
+.platform-review-notice.is-warning .platform-review-notice__actions button { border-color: #dc6803; color: #b54708; }
+.platform-review-notice.is-warning .platform-review-notice__actions a { border-color: #dc6803; background: #dc6803; }
+
 .platform-processing-controls label {
   display: grid;
+  flex: 1 1 190px;
   gap: 5px;
   min-width: 0;
 }
+
+.platform-processing-controls .platform-range-fields { flex-basis:300px; }
+.platform-processing-controls>.kg-button { flex:0 0 auto; }
 
 .platform-processing-controls span {
   color: var(--text-secondary);
@@ -1789,7 +1886,8 @@ print(response.json())</pre>
   line-height: 18px;
 }
 
-.platform-processing-controls select {
+.platform-processing-controls select,
+.platform-processing-controls input {
   width: 100%;
   height: 32px;
   padding: 0 9px;
@@ -1799,6 +1897,15 @@ print(response.json())</pre>
   color: var(--text-primary);
   font-size: 13px;
 }
+
+.platform-range-fields>i { display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px;font-style:normal; }
+.platform-range-fields>i b { color:#71809a;font-size:10px;font-weight:400; }
+
+.platform-update-help { display:flex;flex-wrap:wrap;gap:8px 20px;padding:9px 14px;border-bottom:1px solid #dce8f8;background:#f8fbff;color:#65738b;font-size:10px;line-height:17px; }
+.platform-update-help b { color:#344766; }
+.platform-sticky-table { flex:1 1 auto;min-height:0;overflow:auto; }
+.platform-sticky-table .platform-table th { position:sticky;z-index:2;top:0; }
+.platform-sticky-table code { color:#40516c;font:11px Consolas,monospace; }
 
 .platform-cleaning-flow {
   grid-column: 1 / -1;
@@ -1998,7 +2105,8 @@ print(response.json())</pre>
 }
 
 .platform-form-grid input,
-.platform-form-grid select {
+.platform-form-grid select,
+.platform-form-grid textarea {
   width: 100%;
   height: 32px;
   min-width: 0;
@@ -2009,6 +2117,9 @@ print(response.json())</pre>
   color: var(--text-primary);
   font-size: 14px;
 }
+
+.platform-form-grid textarea { height:58px;padding:8px 10px;line-height:20px;resize:vertical; }
+.platform-query-question { grid-column:1/-1; }
 
 .platform-timeline {
   display: grid;
@@ -2323,6 +2434,29 @@ print(response.json())</pre>
   min-height: 0;
   align-items: stretch;
 }
+
+.platform-build-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.platform-build-stats article {
+  display: grid;
+  gap: 5px;
+  padding: 15px 17px;
+  border: 1px solid #bdd7ff;
+  border-radius: 9px;
+  background: linear-gradient(145deg, #fff, #f2f8ff);
+  box-shadow: 0 8px 20px rgba(48, 105, 194, .08);
+}
+
+.platform-build-stats span { color: var(--text-secondary); font-size: 13px; }
+.platform-build-stats strong { color: #10264c; font-size: 24px; line-height: 31px; }
+.platform-build-stats em { color: var(--text-tertiary); font-size: 12px; font-style: normal; }
+.platform-schema-readonly { grid-column: 1 / -1; overflow: auto; }
+.platform-schema-readonly code { padding: 2px 7px; border-radius: 4px; background: #eef5ff; color: var(--primary); }
+.platform-schema-head{display:flex;align-items:center;gap:14px}.platform-schema-head a{color:var(--primary);font-size:12px;text-decoration:none;white-space:nowrap}
 
 .platform-build-results {
   grid-column: 1 / -1;
@@ -3466,6 +3600,158 @@ print(response.json())</pre>
   font-weight: 600;
 }
 
+.platform-provenance {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #cfe0ff;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #f7faff 0%, #fff 100%);
+}
+
+.platform-provenance__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.platform-provenance__title span {
+  color: #10264c;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.platform-provenance__title em {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e8f1ff;
+  color: var(--primary);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.platform-provenance__target {
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border-radius: 7px;
+  background: #eaf2ff;
+}
+
+.platform-provenance__target strong {
+  color: #16355f;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.platform-provenance__target span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.platform-provenance__section-title {
+  margin: 2px 0 -4px;
+  color: #536987;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.platform-detail .platform-provenance__source {
+  gap: 6px;
+}
+
+.platform-detail .platform-provenance__source div {
+  grid-template-columns: 70px minmax(0, 1fr);
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.platform-provenance code {
+  color: #2458a6;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.platform-provenance__database {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: #f3f7fd;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.platform-provenance__evidence-list {
+  display: grid;
+  gap: 8px;
+}
+
+.platform-provenance__evidence-list article {
+  display: grid;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid #e1eaf8;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.platform-provenance__evidence-list header,
+.platform-provenance__evidence-list p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 0;
+}
+
+.platform-provenance__evidence-list header strong,
+.platform-provenance__evidence-list p b {
+  color: #243b62;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.platform-provenance__evidence-list article > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.platform-provenance__task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.platform-provenance__task-meta span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.platform-provenance__task-meta button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.platform-provenance__source b,
+.platform-provenance__result b {
+  color: #00a870;
+  font-weight: 600;
+}
+
 .platform-service-info {
   display: grid;
   gap: 8px;
@@ -3741,17 +4027,14 @@ print(response.json())</pre>
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 1500px) {
-  .platform-pipeline {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .platform-pipeline__step:not(:last-child)::after {
-    display: none;
-  }
-}
-
 @media (max-width: 1280px) {
+  .platform-summary-grid,.platform-overview-main { grid-template-columns:minmax(0,1fr); }
+  .platform-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .platform-management-focus,.platform-monitor-grid { grid-template-columns:minmax(0,1fr); }
+  .platform-operations-grid { grid-template-columns:minmax(0,1fr); }
+  .platform-structure-grid { grid-template-columns:minmax(0,1fr); }
+  .platform-structure-chart:first-child { border-right:0;border-bottom:1px solid #dce8f8; }
+  .platform-hero__actions span { display:none; }
   .platform-service:not(.platform-service--api) {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto auto minmax(0, 1fr);
@@ -3779,6 +4062,8 @@ print(response.json())</pre>
 
   .platform-processing-overview,
   .platform-construction-kpis,
+  .platform-build-stats,
+  .platform-stage-overview__groups,
   .platform-build-results__body,
   .platform-audit-reasons,
   .platform-processing-controls,
@@ -3786,6 +4071,8 @@ print(response.json())</pre>
   .platform-schema-mapping__body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .platform-stage-group>div { grid-template-columns:repeat(2,minmax(0,1fr)); }
 
   .platform-graph-summary,
   .platform-detail,
@@ -3808,6 +4095,23 @@ print(response.json())</pre>
 }
 
 @media (max-width: 980px) {
+  .platform-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .platform-change-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .platform-change-body { grid-template-columns:minmax(0,1fr); }
+  .platform-change-body>aside { border-top:1px solid #e1eaf5;border-left:0; }
+  .platform-hero__actions { display:none; }
+  .platform-donut-layout { grid-template-columns:150px minmax(0,1fr);gap:12px; }
+  .platform-donut { width:138px;height:138px; }
+  .platform-review-notice {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .platform-review-notice__actions {
+    grid-column: 2;
+    justify-self: start;
+    flex-wrap: wrap;
+  }
+
   .platform-query {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto auto;
@@ -3879,11 +4183,6 @@ print(response.json())</pre>
   line-height: 22px;
 }
 
-.platform-review__tag.is-待审核 {
-  color: var(--warning);
-  background: var(--warning-subtle);
-}
-
 .platform-review__tag.is-处理中 {
   color: var(--primary);
   background: var(--primary-subtle);
@@ -3893,4 +4192,12 @@ print(response.json())</pre>
   color: var(--success);
   background: var(--success-subtle);
 }
+
+.asset-change-mask{position:fixed;z-index:49;inset:0;border:0;background:rgba(16,36,76,.22)}
+.asset-change-drawer{position:fixed;z-index:50;top:0;right:0;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;width:min(820px,78vw);height:100vh;background:#f8fbff;box-shadow:-18px 0 42px rgba(34,74,132,.22)}
+.asset-change-drawer>header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px;border-bottom:1px solid #dce8f8;background:#fff}.asset-change-drawer>header span{color:#165dff;font-size:11px}.asset-change-drawer h2{margin:6px 0 3px;font-size:20px}.asset-change-drawer header p{margin:0;color:#718098;font-size:12px}.asset-change-drawer header>button{width:31px;height:31px;border:0;border-radius:5px;background:#f0f4fa;color:#52647f;font-size:20px;cursor:pointer}
+.asset-change-summary{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:14px}.asset-change-summary article{display:grid;gap:5px;padding:14px;border:1px solid #c7dcfb;border-radius:7px;background:#fff}.asset-change-summary span{color:#718098;font-size:11px}.asset-change-summary strong{color:#165dff;font-size:24px}.asset-change-summary article:last-child strong{color:#079455}
+.asset-change-table{min-height:0;overflow:auto;padding:0 14px 14px}.asset-change-table table{width:100%;border-collapse:collapse;border:1px solid #dce8f8;background:#fff;font-size:12px}.asset-change-table th,.asset-change-table td{height:48px;padding:10px 12px;border-bottom:1px solid #e3ebf6;text-align:left}.asset-change-table th{position:sticky;top:0;background:#f3f7fc;color:#62728a}.asset-change-table td{color:#344861}.asset-change-table code{color:#165dff;font-family:inherit}
+.asset-change-drawer>footer{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-top:1px solid #dce8f8;background:#fff}.asset-change-drawer>footer span{color:#718098;font-size:11px}.asset-change-drawer>footer a{height:32px;padding:0 12px;border-radius:5px;background:#165dff;color:#fff;font-size:11px;line-height:32px;text-decoration:none}
+@media(max-width:760px){.asset-change-drawer{width:94vw}.asset-change-table table{min-width:700px}}
 </style>

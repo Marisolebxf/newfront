@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import iconInfo from '../../assets/icons/icon-info.svg'
 import BusinessServiceAlgorithmPanel from './components/BusinessServiceAlgorithmPanel.vue'
 import BusinessServiceContractPanel from './components/BusinessServiceContractPanel.vue'
 import { getServiceModule, serviceModules } from './service-modules'
@@ -49,10 +48,6 @@ watch(
           开发者接口
         </button>
       </div>
-      <button class="kg-button kg-button--text business-service__tech" type="button">
-        <img :src="iconInfo" alt="" aria-hidden="true" />
-        技术方案
-      </button>
     </header>
 
     <BusinessServiceAlgorithmPanel
@@ -90,13 +85,4 @@ watch(
   padding: 0 14px;
 }
 
-.business-service__tech {
-  gap: 4px;
-}
-
-.business-service__tech img {
-  width: 14px;
-  height: 14px;
-  object-fit: contain;
-}
 </style>

@@ -26,6 +26,176 @@ export interface GraphPreset {
   edges: GraphEdgeData[]
 }
 
+export interface GraphProvenanceEvidence {
+  title: string
+  businessTable: string
+  technicalTable: string
+  recordId: string
+  fieldIdentifier: string
+  summary: string
+}
+
+export interface GraphProvenance {
+  sourceDatabase: string
+  evidences: GraphProvenanceEvidence[]
+  relationEndpoints?: Array<{
+    role: '源实体' | '目标实体'
+    name: string
+    entityType: string
+    businessTable: string
+    technicalTable: string
+    recordId: string
+    fieldIdentifier: string
+  }>
+  task: {
+    name: string
+    instanceId: string
+    executedAt: string
+    status: string
+    mode: string
+    batch: string
+  }
+  result: {
+    ruleName: string
+    ruleVersion: string
+    graphVersion: string
+    generatedAt: string
+    status: string
+  }
+}
+
+const nodeSourceMap: Record<GraphNodeType, { businessTable: string; technicalTable: string; keyField: string; summary: string }> = {
+  main: { businessTable: '专家基本信息表', technicalTable: 'expert_profile', keyField: 'expert_id', summary: '专家姓名、任职机构和研究方向等基本信息' },
+  expert: { businessTable: '专家基本信息表', technicalTable: 'expert_profile', keyField: 'expert_id', summary: '专家姓名、任职机构和研究方向等基本信息' },
+  org: { businessTable: '科技机构信息表', technicalTable: 'organization_base', keyField: 'organization_id', summary: '机构标准名称、简称和统一标识信息' },
+  company: { businessTable: '科技企业信息表', technicalTable: 'enterprise_registry', keyField: 'enterprise_id', summary: '企业名称、统一社会信用代码和经营信息' },
+  paper: { businessTable: '论文成果表', technicalTable: 'paper_metadata', keyField: 'paper_id', summary: '论文题名、作者、发表时间和主题关键词' },
+  topic: { businessTable: '科技主题标签表', technicalTable: 'research_topic', keyField: 'topic_id', summary: '标准主题名称、关键词和所属技术领域' },
+  project: { businessTable: '科研项目表', technicalTable: 'research_project', keyField: 'project_id', summary: '项目名称、承担单位、成员和执行时间' },
+  event: { businessTable: '产业事件表', technicalTable: 'industry_event', keyField: 'event_id', summary: '事件名称、参与主体、时间和事件类型' },
+}
+
+const nodeSourceValue = (node: GraphNodeData) => node.id === 'core'
+  ? 'EXPERT-10286'
+  : node.id === 'org-1' ? 'ORG-10018' : node.id.toUpperCase()
+
+const nodeFieldIdentifier = (node: GraphNodeData) => `${nodeSourceMap[node.nodeType].keyField} = ${nodeSourceValue(node)}`
+
+const edgeSourceMap: Record<string, { businessTable: string; technicalTable: string; summary: string }> = {
+  论文合作: { businessTable: '论文作者关联表', technicalTable: 'paper_author_relation', summary: '两端实体共同出现在同一论文作者列表中' },
+  同事: { businessTable: '专家任职经历表', technicalTable: 'expert_employment', summary: '两端专家在同一机构或部门存在任职时间重叠' },
+  校友: { businessTable: '专家教育经历表', technicalTable: 'expert_education', summary: '两端专家的院校、院系或导师信息存在匹配' },
+  企业关联: { businessTable: '专家企业角色表', technicalTable: 'expert_enterprise_role', summary: '工商角色、项目合作或成果转化记录关联两端实体' },
+  产业事件: { businessTable: '事件主体关联表', technicalTable: 'event_subject_relation', summary: '两端实体共同参与同一产业事件' },
+  直接关系: { businessTable: '业务关系记录表', technicalTable: 'direct_relation', summary: '结构化业务记录直接关联两端实体' },
+}
+
+export function getNodeProvenance(node: GraphNodeData): GraphProvenance {
+  const source = nodeSourceMap[node.nodeType]
+  return {
+    sourceDatabase: '科技要素数据库',
+    evidences: [{
+      title: '原始业务记录',
+      businessTable: source.businessTable,
+      technicalTable: source.technicalTable,
+      recordId: `${node.id.toUpperCase()}-SRC`,
+      fieldIdentifier: nodeFieldIdentifier(node),
+      summary: source.summary,
+    }],
+    task: {
+      name: `${node.entityType}标准化与实体融合`,
+      instanceId: node.id === 'core' ? 'PI-20260714-0001' : node.id === 'org-1' ? 'PI-20260714-0002' : `PI-20260714-NODE-${node.id.toUpperCase()}`,
+      executedAt: '2026-07-13 02:12:36',
+      status: '成功',
+      mode: '清洗规则 + 实体对齐',
+      batch: 'UPD-20260714',
+    },
+    result: {
+      ruleName: `${node.entityType}实体融合规则`,
+      ruleVersion: 'ENTITY-MERGE-1.6',
+      graphVersion: 'v1.8',
+      generatedAt: '2026-07-13 02:14:08',
+      status: '已入图',
+    },
+  }
+}
+
+export function getEdgeProvenance(edge: GraphEdgeData, from?: GraphNodeData, to?: GraphNodeData): GraphProvenance {
+  const relationName = from && to ? `${from.label} → ${to.label}` : edge.id
+  const isInferred = edge.category === '间接关系'
+  const source = edgeSourceMap[edge.category] ?? edgeSourceMap.直接关系
+  const evidences: GraphProvenanceEvidence[] = isInferred
+    ? [
+        {
+          title: `${from?.label ?? '源实体'}关联记录`,
+          businessTable: '实体主题关联表',
+          technicalTable: 'entity_topic_relation',
+          recordId: `${(from?.id ?? edge.from).toUpperCase()}-TOPIC`,
+          fieldIdentifier: `entity_id = ${(from?.id ?? edge.from).toUpperCase()}`,
+          summary: `记录${from?.label ?? '源实体'}关联的论文、项目或主题标签`,
+        },
+        {
+          title: `${to?.label ?? '目标实体'}关联记录`,
+          businessTable: '实体主题关联表',
+          technicalTable: 'entity_topic_relation',
+          recordId: `${(to?.id ?? edge.to).toUpperCase()}-TOPIC`,
+          fieldIdentifier: `entity_id = ${(to?.id ?? edge.to).toUpperCase()}`,
+          summary: `记录${to?.label ?? '目标实体'}关联的论文、项目或主题标签`,
+        },
+        {
+          title: '推理路径证据',
+          businessTable: '实体关系记录表',
+          technicalTable: 'entity_relation',
+          recordId: `${edge.id.toUpperCase()}-PATH`,
+          fieldIdentifier: `relation_id = ${edge.id}`,
+          summary: `${relationName}通过共同论文、项目或主题节点形成两跳路径`,
+        },
+      ]
+    : [{
+        title: '原始业务记录',
+        businessTable: source.businessTable,
+        technicalTable: source.technicalTable,
+        recordId: `${edge.id.toUpperCase()}-SRC`,
+        fieldIdentifier: `relation_id = ${edge.id}`,
+        summary: source.summary,
+      }]
+  return {
+    sourceDatabase: '科技要素数据库',
+    evidences,
+    relationEndpoints: from && to ? [
+      {
+        role: '源实体', name: from.label, entityType: from.entityType,
+        businessTable: nodeSourceMap[from.nodeType].businessTable,
+        technicalTable: nodeSourceMap[from.nodeType].technicalTable,
+        recordId: `${from.id.toUpperCase()}-SRC`,
+        fieldIdentifier: nodeFieldIdentifier(from),
+      },
+      {
+        role: '目标实体', name: to.label, entityType: to.entityType,
+        businessTable: nodeSourceMap[to.nodeType].businessTable,
+        technicalTable: nodeSourceMap[to.nodeType].technicalTable,
+        recordId: `${to.id.toUpperCase()}-SRC`,
+        fieldIdentifier: nodeFieldIdentifier(to),
+      },
+    ] : undefined,
+    task: {
+      name: isInferred ? '图谱关系推理' : `${edge.label}关系识别`,
+      instanceId: edge.id === 'e40' ? 'PI-20260714-0003' : `PI-20260714-EDGE-${edge.id.toUpperCase()}`,
+      executedAt: '2026-07-13 02:12:36',
+      status: '成功',
+      mode: isInferred ? '两跳路径 + 共现规则' : '业务规则识别',
+      batch: 'UPD-20260714',
+    },
+    result: {
+      ruleName: isInferred ? '两跳路径与主题共现规则' : `${edge.label}关系映射规则`,
+      ruleVersion: isInferred ? 'REL-INFER-1.3' : 'REL-MAP-2.1',
+      graphVersion: 'v1.8',
+      generatedAt: '2026-07-13 02:14:08',
+      status: '已入图',
+    },
+  }
+}
+
 const expertEvidence = [
   '共同发表论文 4 篇，作者列表和单位信息一致。',
   '任职时间存在重叠，机构层级匹配到同一实验室。',

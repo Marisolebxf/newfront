@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import iconInfo from '../../../assets/icons/icon-info.svg'
 import KgGraphCanvas from '../../../components/kg-graph-canvas.vue'
-import { getServiceGraphPreset } from '../../../data/graph-presets'
+import { getEdgeProvenance, getNodeProvenance, getServiceGraphPreset } from '../../../data/graph-presets'
 import type { GraphEdgeData, GraphNodeData } from '../../../data/graph-presets'
 import type { ServiceModule } from '../service-modules'
 
@@ -12,11 +12,11 @@ const props = defineProps<{
   responseJson: string
 }>()
 
-const resultMode = ref<'summary' | 'entity' | 'relation' | 'rule' | 'api'>('summary')
+const resultMode = ref<'summary' | 'entity' | 'relation' | 'provenance' | 'rule' | 'api'>('summary')
 const running = ref(false)
 const lastTestTime = ref('2026-07-23 11:00:00')
 const parameterValues = ref<Record<string, string>>({})
-const selectedGraphNodeId = ref<string | null>('core')
+const selectedGraphNodeId = ref<string | null>(null)
 const selectedGraphEdgeId = ref<string | null>(null)
 const graphPreset = computed(() => getServiceGraphPreset(props.moduleInfo.key))
 const graphNodes = computed(() => graphPreset.value.nodes)
@@ -25,10 +25,14 @@ const graphEdges = computed(() => graphPreset.value.edges.filter((edge) => (
   graphNodes.value.some((node) => node.id === edge.to)
 )))
 const selectedNode = computed(() => (
-  graphNodes.value.find((node) => node.id === selectedGraphNodeId.value) ?? graphNodes.value[0]
+  selectedGraphNodeId.value
+    ? graphNodes.value.find((node) => node.id === selectedGraphNodeId.value) ?? null
+    : null
 ))
 const selectedEdge = computed(() => (
-  graphEdges.value.find((edge) => edge.id === selectedGraphEdgeId.value) ?? graphEdges.value[0]
+  selectedGraphEdgeId.value
+    ? graphEdges.value.find((edge) => edge.id === selectedGraphEdgeId.value) ?? null
+    : null
 ))
 const selectedEdgeNodes = computed(() => {
   const edge = selectedEdge.value
@@ -50,6 +54,36 @@ const relationDetailRows = computed(() => {
     ['置信度', `${Math.min(from.confidence, to.confidence).toFixed(2)}`] as const,
     ['命中规则', props.moduleInfo.rules[0]?.name ?? '已命中关系识别规则'] as const,
   ]
+})
+const selectedProvenance = computed(() => {
+  if (selectedNode.value) return getNodeProvenance(selectedNode.value)
+  if (selectedEdge.value) {
+    return getEdgeProvenance(selectedEdge.value, selectedEdgeNodes.value.from, selectedEdgeNodes.value.to)
+  }
+  return null
+})
+const selectedProvenanceTarget = computed(() => {
+  const node = selectedNode.value
+  if (node) {
+    return {
+      kind: '实体',
+      name: node.label,
+      type: node.entityType,
+      id: node.id,
+      confidence: node.confidence.toFixed(2),
+    }
+  }
+  const edge = selectedEdge.value
+  const from = selectedEdgeNodes.value.from
+  const to = selectedEdgeNodes.value.to
+  if (!edge || !from || !to) return null
+  return {
+    kind: '关系',
+    name: `${from.label} → ${to.label}`,
+    type: edge.label,
+    id: edge.id,
+    confidence: Math.min(from.confidence, to.confidence).toFixed(2),
+  }
 })
 const detailRows = computed(() => {
   const requestEntries = props.moduleInfo.requestFields.slice(0, 4).map((field) => [
@@ -74,7 +108,7 @@ watch(
   () => props.moduleInfo.key,
   () => {
     resultMode.value = 'summary'
-    selectedGraphNodeId.value = 'core'
+    selectedGraphNodeId.value = null
     selectedGraphEdgeId.value = null
     resetParameters()
   },
@@ -179,6 +213,7 @@ function handleSelectGraphEdge(edge: GraphEdgeData) {
             <button :class="{ 'is-active': resultMode === 'summary' }" type="button" @click="resultMode = 'summary'">摘要</button>
             <button :class="{ 'is-active': resultMode === 'entity' }" type="button" @click="resultMode = 'entity'">实体</button>
             <button :class="{ 'is-active': resultMode === 'relation' }" type="button" @click="resultMode = 'relation'">关系</button>
+            <button :class="{ 'is-active': resultMode === 'provenance' }" type="button" @click="resultMode = 'provenance'">溯源</button>
             <button :class="{ 'is-active': resultMode === 'rule' }" type="button" @click="resultMode = 'rule'">规则</button>
             <button :class="{ 'is-active': resultMode === 'api' }" type="button" @click="resultMode = 'api'">API</button>
           </div>
@@ -189,19 +224,50 @@ function handleSelectGraphEdge(edge: GraphEdgeData) {
             <dd>{{ value }}</dd>
           </div>
         </dl>
-        <dl v-else-if="resultMode === 'entity'" class="result-panel__table">
+        <dl v-else-if="resultMode === 'entity' && selectedNode" class="result-panel__table">
           <div><dt>实体名称</dt><dd>{{ selectedNode.label }}</dd></div>
           <div><dt>实体类型</dt><dd>{{ selectedNode.entityType }}</dd></div>
           <div><dt>命中关系</dt><dd>{{ selectedNode.relations }}</dd></div>
           <div><dt>置信度</dt><dd>{{ selectedNode.confidence.toFixed(2) }}</dd></div>
-          <div><dt>数据来源</dt><dd>专家库 / 论文库 / 项目库 / 工商库</dd></div>
         </dl>
-        <dl v-else-if="resultMode === 'relation'" class="result-panel__table">
+        <dl v-else-if="resultMode === 'relation' && selectedEdge" class="result-panel__table">
           <div v-for="([label, value], index) in relationDetailRows" :key="`${label}-${index}`">
             <dt>{{ label }}</dt>
             <dd>{{ value }}</dd>
           </div>
         </dl>
+        <section v-else-if="resultMode === 'provenance' && selectedProvenance && selectedProvenanceTarget" class="result-provenance">
+          <header><strong>当前追溯对象</strong><span>{{ selectedProvenanceTarget.kind }}</span></header>
+          <div class="result-provenance__target">
+            <strong>{{ selectedProvenanceTarget.name }}</strong>
+            <span>{{ selectedProvenanceTarget.kind }}</span>
+          </div>
+          <template v-if="selectedNode">
+            <h3>实体溯源</h3>
+            <dl class="result-provenance__source">
+              <div><dt>实体类型</dt><dd>{{ selectedProvenanceTarget.type }}</dd></div>
+              <div><dt>源数据表</dt><dd><code>{{ selectedProvenance.evidences[0]?.technicalTable }}</code></dd></div>
+              <div><dt>字段标识 ID</dt><dd><code>{{ selectedProvenance.evidences[0]?.fieldIdentifier }}</code></dd></div>
+              <div><dt>构建任务 ID</dt><dd><code>{{ selectedProvenance.task.instanceId }}</code></dd></div>
+            </dl>
+            <div class="result-provenance__task-meta"><RouterLink :to="{ name: 'processing-instance-detail', params: { instanceId: selectedProvenance.task.instanceId }, query: { stage: '图谱构建', objectName: selectedProvenanceTarget.name, objectId: selectedProvenanceTarget.id, objectType: selectedProvenanceTarget.type, kind: selectedProvenanceTarget.kind, sourceTable: selectedProvenance.evidences[0]?.technicalTable, sourceRecordId: selectedProvenance.evidences[0]?.fieldIdentifier } }">查看构建详情 →</RouterLink></div>
+          </template>
+          <template v-else-if="selectedProvenance.relationEndpoints?.length">
+            <h3>关系溯源</h3>
+            <dl class="result-provenance__source"><div><dt>关系类型</dt><dd>{{ selectedProvenanceTarget.type }}</dd></div></dl>
+            <h3>两端实体来源</h3>
+            <div class="result-provenance__evidence-list">
+              <article v-for="endpoint in selectedProvenance.relationEndpoints" :key="endpoint.role">
+                <header><strong>{{ endpoint.role }} · {{ endpoint.name }}</strong></header>
+                <p><b>实体类型：{{ endpoint.entityType }}</b></p>
+                <span>源数据表：<code>{{ endpoint.technicalTable }}</code></span>
+                <span>字段标识 ID：<code>{{ endpoint.fieldIdentifier }}</code></span>
+              </article>
+            </div>
+            <dl class="result-provenance__source"><div><dt>构建任务 ID</dt><dd><code>{{ selectedProvenance.task.instanceId }}</code></dd></div></dl>
+            <div class="result-provenance__task-meta"><RouterLink :to="{ name: 'processing-instance-detail', params: { instanceId: selectedProvenance.task.instanceId }, query: { stage: '图谱构建', objectName: selectedProvenanceTarget.name, objectId: selectedProvenanceTarget.id, objectType: selectedProvenanceTarget.type, kind: selectedProvenanceTarget.kind } }">查看构建详情 →</RouterLink></div>
+          </template>
+        </section>
         <div v-else-if="resultMode === 'rule'" class="result-panel__rules">
           <article v-for="(rule, index) in moduleInfo.rules" :key="rule.name">
             <header>
@@ -218,7 +284,7 @@ function handleSelectGraphEdge(edge: GraphEdgeData) {
             </dl>
           </article>
         </div>
-        <pre v-else class="result-panel__code">{{ apiResultJson }}</pre>
+        <pre v-else-if="resultMode === 'api'" class="result-panel__code">{{ apiResultJson }}</pre>
       </section>
     </aside>
   </div>
@@ -415,6 +481,164 @@ function handleSelectGraphEdge(edge: GraphEdgeData) {
 .result-panel__table dd {
   color: var(--text-primary);
   overflow-wrap: anywhere;
+}
+
+.result-provenance {
+  display: grid;
+  gap: 12px;
+  margin: 12px 14px 14px;
+  padding: 12px;
+  border: 1px solid #cfe0ff;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #f7faff 0%, #fff 100%);
+  overflow: auto;
+}
+
+.result-provenance header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.result-provenance header strong {
+  color: #10264c;
+  font-size: 14px;
+}
+
+.result-provenance header span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e8f1ff;
+  color: var(--primary);
+  font-size: 12px;
+}
+
+.result-provenance__target {
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border-radius: 7px;
+  background: #eaf2ff;
+}
+
+.result-provenance__target strong {
+  color: #16355f;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.result-provenance__target span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.result-provenance h3 {
+  margin: 2px 0 -5px;
+  color: #536987;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.result-provenance .result-provenance__source {
+  flex: none;
+  overflow: visible;
+}
+
+.result-provenance .result-provenance__source div {
+  grid-template-columns: 86px minmax(0, 1fr);
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.result-provenance .result-provenance__source dt,
+.result-provenance .result-provenance__source dd {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.result-provenance code {
+  color: #2458a6;
+  font-family: Consolas, Monaco, monospace;
+  overflow-wrap: anywhere;
+}
+
+.result-provenance__database {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: #f3f7fd;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.result-provenance__evidence-list {
+  display: grid;
+  gap: 8px;
+}
+
+.result-provenance__evidence-list article {
+  display: grid;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid #e1eaf8;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.result-provenance__evidence-list article header,
+.result-provenance__evidence-list article p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 0;
+}
+
+.result-provenance__evidence-list article header strong,
+.result-provenance__evidence-list article p b {
+  color: #243b62;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.result-provenance__evidence-list article > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.result-provenance__task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.result-provenance__task-meta span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.result-provenance__task-meta a {
+  color: var(--primary);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.result-provenance__source b,
+.result-provenance__output b {
+  color: #00a870;
+  font-weight: 600;
 }
 
 .result-panel__code {

@@ -2,6 +2,12 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 
 import BusinessServiceView from '../views/business-service/BusinessServiceView.vue'
 import PlatformWorkbenchView from '../views/platform/PlatformWorkbenchView.vue'
+import OperationsCenterView from '../views/platform/OperationsCenterView.vue'
+import ManualReviewWorkspaceView from '../views/platform/ManualReviewWorkspaceView.vue'
+import ProcessInstanceDetailView from '../views/platform/ProcessInstanceDetailView.vue'
+import TaskCenterView from '../views/platform/TaskCenterView.vue'
+import GraphToolServiceView from '../views/platform/GraphToolServiceView.vue'
+import SchemaBrowserView from '../views/platform/SchemaBrowserView.vue'
 
 const serviceRoutes = [
   { path: '/expert-direct', name: 'expert-direct', title: '科技专家/人才直接关系', serviceKey: 'expert-direct' },
@@ -31,17 +37,11 @@ export const router = createRouter({
     },
     {
       path: '/data-processing',
-      name: 'data-processing',
-      component: PlatformWorkbenchView,
-      props: { initialTab: 'processing' },
-      meta: { title: '数据处理' },
+      redirect: { path: '/tasks', query: { module: '数据处理' } },
     },
     {
       path: '/graph-construction',
-      name: 'graph-construction',
-      component: PlatformWorkbenchView,
-      props: { initialTab: 'construction' },
-      meta: { title: '图谱构建' },
+      redirect: { path: '/tasks', query: { module: '图谱构建' } },
     },
     {
       path: '/graph-query',
@@ -50,10 +50,20 @@ export const router = createRouter({
       props: { initialTab: 'query' },
       meta: { title: '图谱查询' },
     },
+    { path: '/schema', name: 'schema', component: SchemaBrowserView, meta: { title: '图谱 Schema' } },
+    { path: '/alerts', name: 'alerts', component: OperationsCenterView, props: { mode: 'alerts' }, meta: { title: '异常治理' } },
+    { path: '/tasks', name: 'tasks', component: TaskCenterView, meta: { title: '任务中心' } },
+    { path: '/manual-review', name: 'manual-review', component: OperationsCenterView, props: { mode: 'review' }, meta: { title: '人工处理平台' } },
+    { path: '/manual-review/task/:instanceId', name: 'manual-review-detail', component: ManualReviewWorkspaceView, meta: { title: '人工处理详情' } },
+    { path: '/user-permissions', redirect: '/overview' },
+    { path: '/task-detail/:area/:taskId', name: 'task-detail', component: ProcessInstanceDetailView, meta: { title: '任务实例详情' } },
+    { path: '/processing-instance/:instanceId', name: 'processing-instance-detail', component: ProcessInstanceDetailView, meta: { title: '任务实例详情' } },
+    { path: '/graph-versions', redirect: { path: '/tasks', query: { module: '图谱版本' } } },
     {
       path: '/business-service',
       redirect: '/expert-direct',
     },
+    { path: '/graph-tools', name: 'graph-tools', component: GraphToolServiceView, meta: { title: '知识检索问答' } },
     ...serviceRoutes.map((route) => ({
       path: route.path,
       name: route.name,

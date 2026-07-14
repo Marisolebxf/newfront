@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, onErrorCaptured, ref } from 'vue'
+import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 
 import iconMenuCollapse from '../assets/icons/icon-menu-collapse.svg'
-import iconMessage from '../assets/icons/icon-message.svg'
 import iconSidebarArrow from '../assets/icons/icon-sidebar-arrow.svg'
-import navFlow from '../assets/icons/nav-flow.svg'
-import navGraph from '../assets/icons/nav-graph.svg'
-import navReasoning from '../assets/icons/nav-reasoning.svg'
+import navOverview from '../assets/icons/nav-overview.svg'
+import navQuery from '../assets/icons/nav-query.svg'
+import navRetrieval from '../assets/icons/nav-retrieval.svg'
+import navReview from '../assets/icons/nav-review.svg'
+import navSchema from '../assets/icons/nav-schema.svg'
+import navServices from '../assets/icons/nav-services.svg'
+import navTasks from '../assets/icons/nav-tasks.svg'
 import { useAppStore } from '../stores/app'
 import avatarBen from '../assets/images/avatar-ben.png'
 import logoKg from '../assets/images/logo-kg.png'
@@ -15,8 +18,36 @@ import logoKg from '../assets/images/logo-kg.png'
 const route = useRoute()
 const appStore = useAppStore()
 const pageTitle = computed(() => String(route.meta.title ?? '亿级知识图谱'))
+const activePrimaryNav = computed(() => {
+  if (route.path.startsWith('/manual-review')) return 'manual-review'
+  if (route.path === '/tasks' || route.path.startsWith('/processing-instance/') || route.path.startsWith('/task-detail/')) return 'tasks'
+  return ''
+})
 const routeError = ref('')
 const serviceNavCollapsed = ref(false)
+const alertDrawerOpen = ref(false)
+const alertPreviewOpen = ref(false)
+const userMenuOpen = ref(false)
+const userEntryRef = ref<HTMLElement | null>(null)
+const assistantEntryRef = ref<HTMLButtonElement | null>(null)
+const accountFeedback = ref('')
+const assistantOpen = ref(false)
+const assistantPosition = ref({ x: 0, y: 0 })
+const assistantViewport = ref({ width: 1440, height: 900 })
+const assistantDragging = ref(false)
+const assistantDragMoved = ref(false)
+let assistantDragOrigin = { pointerX: 0, pointerY: 0, x: 0, y: 0 }
+const assistantQuestion = ref('')
+const assistantMessages = ref<Array<{ role: 'assistant' | 'user'; content: string; sources?: string[] }>>([
+  { role: 'assistant', content: '您好，我是知识图谱助手。您可以询问专家、机构、论文、项目关系，也可以查询平台当前的任务与异常。' },
+])
+const alertFilter = ref<'全部' | '已阻断' | '待处理'>('全部')
+const alertItems = [
+  { id: 'ALT-0713-018', severity: '严重', module: '图谱构建', title: '大模型输出未通过 Schema 校验', batch: 'UPD-20260714', meta: 'UPD-20260714 · 326 条异常', time: '2 分钟前', blocked: true, to: '/tasks?module=图谱构建&batch=UPD-20260714' },
+  { id: 'ALT-0713-014', severity: '严重', module: '数据处理', title: '论文唯一性质检规则失败', batch: 'UPD-20260714', meta: 'UPD-20260714 · 385 条已隔离', time: '36 分钟前', blocked: true, to: '/tasks?module=数据处理&batch=UPD-20260714' },
+  { id: 'ALT-0712-106', severity: '警告', module: '图谱构建', title: '实体消歧候选置信度偏低', batch: 'UPD-20260713', meta: 'UPD-20260713 · 42 条已完成确认', time: '昨日 18:06', blocked: false, to: '/manual-review?tab=history&batch=UPD-20260713' },
+]
+const filteredAlertItems = computed(() => alertItems.filter((item) => alertFilter.value === '全部' || (alertFilter.value === '已阻断' ? item.blocked : !item.blocked)))
 const serviceNavItems = [
   { to: '/expert-direct', label: '专家直接关系', fullLabel: '科技专家直接关系' },
   { to: '/node-indirect', label: '单节点间接关系', fullLabel: '科技单节点间接关系' },
@@ -31,10 +62,146 @@ const serviceNavItems = [
 const showServiceNavItems = computed(() => (
   !appStore.collapsed && !serviceNavCollapsed.value
 ))
+const assistantEntryStyle = computed(() => ({ left: `${assistantPosition.value.x}px`, top: `${assistantPosition.value.y}px` }))
+const assistantPanelStyle = computed(() => {
+  const viewportWidth = assistantViewport.value.width
+  const viewportHeight = assistantViewport.value.height
+  const width = Math.min(390, viewportWidth - 20)
+  const height = Math.min(560, viewportHeight - 120)
+  return {
+    left: `${Math.max(10, Math.min(viewportWidth - width - 10, assistantPosition.value.x + 118 - width))}px`,
+    top: `${Math.max(10, Math.min(viewportHeight - height - 10, assistantPosition.value.y - height - 10))}px`,
+    width: `${width}px`,
+    height: `${height}px`,
+  }
+})
 
 onErrorCaptured((error) => {
   routeError.value = error instanceof Error ? error.message : String(error)
   return false
+})
+
+function openAlertDrawer() {
+  alertPreviewOpen.value = false
+  userMenuOpen.value = false
+  assistantOpen.value = false
+  alertDrawerOpen.value = true
+}
+
+function toggleUserMenu() {
+  alertPreviewOpen.value = false
+  userMenuOpen.value = !userMenuOpen.value
+}
+
+function handleAccountAction(action: '账号管理' | '切换账号' | '退出登录') {
+  accountFeedback.value = action === '账号管理'
+    ? '账号与安全由统一门户管理，即将返回门户账号中心。'
+    : action === '切换账号'
+      ? '即将退出当前统一认证并返回门户选择账号。'
+      : '即将退出知识图谱平台并返回统一门户。'
+}
+
+function toggleAssistant() {
+  if (assistantDragMoved.value) {
+    assistantDragMoved.value = false
+    return
+  }
+  alertDrawerOpen.value = false
+  userMenuOpen.value = false
+  assistantOpen.value = !assistantOpen.value
+}
+
+function startAssistantDrag(event: PointerEvent) {
+  assistantDragging.value = true
+  assistantDragMoved.value = false
+  assistantDragOrigin = { pointerX: event.clientX, pointerY: event.clientY, x: assistantPosition.value.x, y: assistantPosition.value.y }
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+function moveAssistantDrag(event: PointerEvent) {
+  if (!assistantDragging.value) return
+  const deltaX = event.clientX - assistantDragOrigin.pointerX
+  const deltaY = event.clientY - assistantDragOrigin.pointerY
+  if (Math.abs(deltaX) + Math.abs(deltaY) > 4) assistantDragMoved.value = true
+  assistantPosition.value = clampAssistantPosition({
+    x: assistantDragOrigin.x + deltaX,
+    y: assistantDragOrigin.y + deltaY,
+  })
+}
+
+function stopAssistantDrag(event: PointerEvent) {
+  assistantDragging.value = false
+  const target = event.currentTarget as HTMLElement
+  if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId)
+}
+
+function clampAssistantPosition(position: { x: number; y: number }) {
+  const entryWidth = assistantEntryRef.value?.offsetWidth ?? 126
+  const entryHeight = assistantEntryRef.value?.offsetHeight ?? 42
+  return {
+    x: Math.max(8, Math.min(assistantViewport.value.width - entryWidth - 8, position.x)),
+    y: Math.max(8, Math.min(assistantViewport.value.height - entryHeight - 8, position.y)),
+  }
+}
+
+function placeAssistantAtDefault() {
+  assistantPosition.value = clampAssistantPosition({ x: Number.POSITIVE_INFINITY, y: Number.POSITIVE_INFINITY })
+}
+
+function handleViewportResize() {
+  assistantViewport.value = { width: window.innerWidth, height: window.innerHeight }
+  assistantPosition.value = clampAssistantPosition(assistantPosition.value)
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') handleViewportResize()
+}
+
+function handleDocumentPointerDown(event: PointerEvent) {
+  if (userMenuOpen.value && !userEntryRef.value?.contains(event.target as Node)) userMenuOpen.value = false
+}
+
+function askAssistant() {
+  const question = assistantQuestion.value.trim()
+  if (!question) return
+  assistantMessages.value.push({ role: 'user', content: question })
+  assistantQuestion.value = ''
+  if (question.includes('异常') || question.includes('审核') || question.includes('任务')) {
+    assistantMessages.value.push({ role: 'assistant', content: '当前有 2 个阻断批次需要人工审核，共隔离 711 条异常记录。其中图谱构建批次 326 条，数据处理批次 385 条。', sources: ['任务中心', '人工处理', '异常通知'] })
+    return
+  }
+  if (question.includes('张明远') || question.includes('专家')) {
+    assistantMessages.value.push({ role: 'assistant', content: '检索结果显示，张明远近五年的核心合作方向集中在智能计算与芯片设计，主要合作机构包括中国科学院自动化研究所和华南智能芯片有限公司。', sources: ['专家实体', '论文合作记录', '项目与专利记录'] })
+    return
+  }
+  assistantMessages.value.push({ role: 'assistant', content: '已从统一知识图谱中检索相关实体、关系和来源记录。您可以进入完整知识检索页继续限定时间、业务域或上传参考文档进行分析。', sources: ['统一知识图谱', 'Schema v1.8'] })
+}
+
+watch(() => route.fullPath, () => {
+  alertDrawerOpen.value = false
+  alertPreviewOpen.value = false
+  userMenuOpen.value = false
+})
+
+onMounted(() => {
+  assistantViewport.value = { width: window.innerWidth, height: window.innerHeight }
+  placeAssistantAtDefault()
+  window.addEventListener('resize', handleViewportResize)
+  window.addEventListener('focus', handleViewportResize)
+  window.addEventListener('pageshow', handleViewportResize)
+  window.visualViewport?.addEventListener('resize', handleViewportResize)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  document.addEventListener('pointerdown', handleDocumentPointerDown)
+  window.requestAnimationFrame(handleViewportResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleViewportResize)
+  window.removeEventListener('focus', handleViewportResize)
+  window.removeEventListener('pageshow', handleViewportResize)
+  window.visualViewport?.removeEventListener('resize', handleViewportResize)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  document.removeEventListener('pointerdown', handleDocumentPointerDown)
 })
 </script>
 
@@ -55,30 +222,36 @@ onErrorCaptured((error) => {
             </button>
           </div>
 
-          <nav class="app-nav">
-            <div v-if="!appStore.collapsed" class="app-nav__group">平台能力</div>
-            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/overview" :title="appStore.collapsed ? '平台总览' : undefined">
-              <img class="app-nav__icon" :src="navFlow" alt="" aria-hidden="true" />
+          <nav class="app-nav" aria-label="平台功能导航">
+            <div v-if="!appStore.collapsed" class="app-nav__group"><span>工作台</span><em>总览</em></div>
+            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" active-class="app-nav__item--active" to="/overview" :title="appStore.collapsed ? '平台总览' : undefined">
+              <img class="app-nav__icon" :src="navOverview" alt="" aria-hidden="true" />
               <span v-if="!appStore.collapsed">平台总览</span>
-              <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
             </RouterLink>
-            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/data-processing" :title="appStore.collapsed ? '数据处理' : undefined">
-              <img class="app-nav__icon" :src="navGraph" alt="" aria-hidden="true" />
-              <span v-if="!appStore.collapsed">数据处理</span>
-              <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
+
+            <div v-if="!appStore.collapsed" class="app-nav__group"><span>图谱建设与治理</span><em>定义 · 建设 · 处置</em></div>
+            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" active-class="app-nav__item--active" to="/schema" :title="appStore.collapsed ? 'Schema 管理' : undefined">
+              <img class="app-nav__icon" :src="navSchema" alt="" aria-hidden="true" />
+              <span v-if="!appStore.collapsed">Schema 管理</span>
             </RouterLink>
-            <div v-if="!appStore.collapsed" class="app-nav__group">图谱治理</div>
-            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/graph-construction" :title="appStore.collapsed ? '图谱构建' : undefined">
-              <img class="app-nav__icon" :src="navReasoning" alt="" aria-hidden="true" />
-              <span v-if="!appStore.collapsed">图谱构建</span>
-              <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
+            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" :class="{ 'app-nav__item--active': activePrimaryNav === 'tasks' }" active-class="app-nav__item--active" to="/tasks" :title="appStore.collapsed ? '任务中心' : undefined">
+              <img class="app-nav__icon" :src="navTasks" alt="" aria-hidden="true" />
+              <span v-if="!appStore.collapsed">任务中心</span>
             </RouterLink>
-            <RouterLink class="app-nav__item app-nav__item--top" active-class="app-nav__item--active" to="/graph-query" :title="appStore.collapsed ? '图谱查询' : undefined">
-              <img class="app-nav__icon" :src="navGraph" alt="" aria-hidden="true" />
+            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" :class="{ 'app-nav__item--active': activePrimaryNav === 'manual-review' }" active-class="app-nav__item--active" to="/manual-review" :title="appStore.collapsed ? '人工处理' : undefined">
+              <img class="app-nav__icon" :src="navReview" alt="" aria-hidden="true" />
+              <span v-if="!appStore.collapsed">人工处理</span>
+            </RouterLink>
+
+            <div v-if="!appStore.collapsed" class="app-nav__group"><span>查询与服务</span><em>验证 · 调用 · 应用</em></div>
+            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" active-class="app-nav__item--active" to="/graph-query" :title="appStore.collapsed ? '图谱查询' : undefined">
+              <img class="app-nav__icon" :src="navQuery" alt="" aria-hidden="true" />
               <span v-if="!appStore.collapsed">图谱查询</span>
-              <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
             </RouterLink>
-            <div v-if="!appStore.collapsed" class="app-nav__group">服务调用</div>
+            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" active-class="app-nav__item--active" to="/graph-tools" :title="appStore.collapsed ? '知识检索问答' : undefined">
+              <img class="app-nav__icon" :src="navRetrieval" alt="" aria-hidden="true" />
+              <span v-if="!appStore.collapsed">知识检索问答</span>
+            </RouterLink>
             <button
               class="app-nav__item app-nav__item--top app-nav__item--button"
               :class="{ 'app-nav__item--open': !serviceNavCollapsed }"
@@ -87,7 +260,7 @@ onErrorCaptured((error) => {
               :aria-expanded="!serviceNavCollapsed"
               @click="serviceNavCollapsed = !serviceNavCollapsed"
             >
-              <img class="app-nav__icon" :src="navReasoning" alt="" aria-hidden="true" />
+              <img class="app-nav__icon" :src="navServices" alt="" aria-hidden="true" />
               <span v-if="!appStore.collapsed">业务服务</span>
               <img v-if="!appStore.collapsed" class="app-nav__arrow" :src="iconSidebarArrow" alt="" aria-hidden="true" />
             </button>
@@ -105,14 +278,42 @@ onErrorCaptured((error) => {
             </RouterLink>
           </nav>
 
-          <div class="app-user">
-            <img class="app-user__avatar" :src="avatarBen" alt="" aria-hidden="true" />
-            <span v-if="!appStore.collapsed">系统管理员</span>
-            <img v-if="!appStore.collapsed" class="app-user__message" :src="iconMessage" alt="" aria-hidden="true" />
-          </div>
         </aside>
 
         <main class="app-main">
+          <div class="app-top-actions">
+            <span class="app-top-actions__context">{{ pageTitle }}</span>
+            <div class="app-top-actions__right">
+              <div class="app-alert-entry" @mouseenter="alertPreviewOpen = !alertDrawerOpen" @mouseleave="alertPreviewOpen = false">
+                <button class="app-alert-bell" type="button" aria-label="7 条未读告警" :aria-expanded="alertDrawerOpen" @click="openAlertDrawer">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
+                  <b>7</b>
+                </button>
+                <aside v-if="alertPreviewOpen" class="alert-preview" aria-label="异常总览">
+                  <header><div><strong>异常总览</strong><span>实时监测</span></div><em>点击铃铛查看全部</em></header>
+                  <section><article><strong>7</strong><span>未读异常</span></article><article class="danger"><strong>2</strong><span>已阻断任务</span></article><article><strong>711</strong><span>隔离记录</span></article></section>
+                  <div><p v-for="item in alertItems.slice(0, 2)" :key="item.id"><i :class="`is-${item.severity}`" /><span><strong>{{ item.title }}</strong><em>{{ item.module }} · {{ item.time }}</em></span></p></div>
+                </aside>
+              </div>
+              <div ref="userEntryRef" class="app-user-entry">
+                <button class="app-top-actions__user" type="button" aria-label="当前门户用户" :aria-expanded="userMenuOpen" @click="toggleUserMenu">
+                  <img :src="avatarBen" alt="" aria-hidden="true" />
+                  <span><strong>门户用户</strong><em>统一认证</em></span>
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
+                </button>
+                <aside v-if="userMenuOpen" class="app-user-menu">
+                  <header><img :src="avatarBen" alt="" /><div><strong>门户用户</strong><span>科技管理部门 · 统一认证</span></div></header>
+                  <p>账号、认证与安全策略由门户系统统一管理。</p>
+                  <nav>
+                    <button type="button" @click="handleAccountAction('账号管理')"><span>账号与安全</span><em>前往统一门户</em></button>
+                    <button type="button" @click="handleAccountAction('切换账号')"><span>切换账号</span><em>重新统一认证</em></button>
+                    <button class="danger" type="button" @click="handleAccountAction('退出登录')"><span>退出登录</span><em>返回门户首页</em></button>
+                  </nav>
+                  <footer v-if="accountFeedback">{{ accountFeedback }}</footer>
+                </aside>
+              </div>
+            </div>
+          </div>
           <section class="app-workspace" :aria-label="pageTitle">
             <div v-if="routeError" class="route-error">
               <strong>页面渲染异常</strong>
@@ -121,6 +322,33 @@ onErrorCaptured((error) => {
             <RouterView v-else />
           </section>
         </main>
+        <button v-if="alertDrawerOpen" class="alert-drawer-mask" type="button" aria-label="关闭告警抽屉" @click="alertDrawerOpen = false" />
+        <aside v-if="alertDrawerOpen" class="alert-drawer" aria-label="异常通知">
+          <header><div><h2>异常通知</h2><p>7 条未读 · 2 个任务已阻断</p></div><button type="button" aria-label="关闭" @click="alertDrawerOpen = false">×</button></header>
+          <div class="alert-drawer__filter"><button v-for="item in (['全部', '已阻断', '待处理'] as const)" :key="item" :class="{ active: alertFilter === item }" type="button" @click="alertFilter = item">{{ item }}</button></div>
+          <div class="alert-drawer__list">
+            <article v-for="item in filteredAlertItems" :key="item.id" class="alert-item">
+              <i :class="`is-${item.severity}`"></i>
+              <div><span><b>{{ item.severity }}</b>{{ item.module }}<em>{{ item.time }}</em></span><strong>{{ item.title }}</strong><p>{{ item.meta }}</p><small v-if="item.blocked">已阻断下游处理</small><nav><RouterLink :to="item.to">查看诊断</RouterLink><RouterLink class="primary" :to="`/manual-review?batch=${item.batch}`">人工处理</RouterLink></nav></div>
+            </article>
+          </div>
+          <footer><RouterLink to="/alerts">查看全部异常</RouterLink><RouterLink class="footer-primary" to="/manual-review">查看全部人工处理任务 →</RouterLink></footer>
+        </aside>
+        <aside v-if="assistantOpen" class="knowledge-assistant" :style="assistantPanelStyle" aria-label="知识图谱助手">
+          <header><div><i>AI</i><span><strong>知识图谱助手</strong><em>图谱检索 + 大模型分析</em></span></div><button type="button" aria-label="关闭知识助手" @click="assistantOpen=false">×</button></header>
+          <div class="knowledge-assistant__messages">
+            <article v-for="(message, index) in assistantMessages" :key="index" :class="`is-${message.role}`">
+              <p>{{ message.content }}</p>
+              <div v-if="message.sources"><span>证据来源</span><b v-for="source in message.sources" :key="source">{{ source }}</b></div>
+            </article>
+          </div>
+          <RouterLink class="knowledge-assistant__full" to="/graph-tools">进入完整知识检索问答 →</RouterLink>
+          <form @submit.prevent="askAssistant"><textarea v-model="assistantQuestion" placeholder="请输入要查询的问题，例如：当前有哪些异常需要处理？" @keydown.enter.exact.prevent="askAssistant" /><button type="submit" :disabled="!assistantQuestion.trim()">发送</button></form>
+        </aside>
+        <button ref="assistantEntryRef" class="knowledge-assistant-entry" type="button" :class="{ active: assistantOpen, dragging: assistantDragging }" :style="assistantEntryStyle" :aria-expanded="assistantOpen" aria-label="打开知识图谱助手，可拖动调整位置" @pointerdown="startAssistantDrag" @pointermove="moveAssistantDrag" @pointerup="stopAssistantDrag" @pointercancel="stopAssistantDrag" @click="toggleAssistant">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="13" rx="4"/><path d="M9 6V4h6v2M8.5 12h.01M15.5 12h.01M9 16h6"/></svg>
+          <span>{{ assistantOpen ? '收起助手' : '知识助手' }}</span>
+        </button>
       </div>
   </div>
 </template>
@@ -258,6 +486,9 @@ onErrorCaptured((error) => {
   gap: 4px;
   margin-top: 16px;
   padding-bottom: 14px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(84, 139, 220, .38) transparent;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
@@ -317,12 +548,32 @@ onErrorCaptured((error) => {
 }
 
 .app-nav__group {
-  margin: 16px 8px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 20px 8px 8px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(111, 151, 207, 0.18);
   color: #567198;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 22px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0;
+}
+
+.app-nav__group:first-child {
+  margin-top: 6px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.app-nav__group em {
+  color: #91a5c0;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: .02em;
 }
 
 .app-nav__icon {
@@ -341,6 +592,10 @@ onErrorCaptured((error) => {
   object-fit: contain;
   opacity: 0.52;
   transition: transform 0.16s ease;
+}
+
+.app-nav__item--leaf {
+  grid-template-columns: 22px minmax(0, 1fr);
 }
 
 .app-nav__item--open {
@@ -376,6 +631,10 @@ onErrorCaptured((error) => {
   grid-template-columns: 22px minmax(0, 1fr) 14px;
   width: 100%;
   margin-left: 0;
+}
+
+.app-nav__item--top.app-nav__item--leaf.app-nav__item--active {
+  grid-template-columns: 22px minmax(0, 1fr);
 }
 
 .app-nav__item--sub {
@@ -428,35 +687,6 @@ onErrorCaptured((error) => {
   color: #fff;
 }
 
-.app-user {
-  position: static;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-8);
-  width: 100%;
-  min-width: 0;
-  margin-top: 10px;
-  font-size: 16px;
-  line-height: 23px;
-  color: #243b63;
-}
-
-.app-user__avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.app-user__message {
-  width: 22px;
-  height: 22px;
-  margin-left: auto;
-  object-fit: contain;
-  opacity: 0.72;
-}
-
 .app-main {
   min-width: 0;
   height: 100%;
@@ -464,8 +694,117 @@ onErrorCaptured((error) => {
   overflow: hidden;
 }
 
+.app-top-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 34px;
+  margin-bottom: 8px;
+}
+
+.app-top-actions__user {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(191, 215, 250, .96);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .84);
+  color: #344766;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.app-top-actions__user>img { width:22px;height:22px;border-radius:50%;object-fit:cover; }
+.app-top-actions__user>span { display:grid;gap:0;line-height:1.15; }
+.app-top-actions__user strong { color:#344766;font-size:12px;font-weight:600; }
+.app-top-actions__user em { color:#7890b5;font-size:9px;font-style:normal; }
+.app-top-actions__user>i { color:#7890b5;font-size:10px;font-style:normal; }
+.app-top-actions__user>svg { width:14px;height:14px;fill:none;stroke:#7890b5;stroke-width:1.6;transition:transform .2s; }
+.app-top-actions__user[aria-expanded="true"] { border-color:#8fb7f2;background:#fff;box-shadow:0 5px 14px rgba(44,91,157,.1); }
+.app-top-actions__user[aria-expanded="true"]>svg { transform:rotate(180deg); }
+.app-user-entry { position:relative;z-index:38; }
+.app-user-menu { position:absolute;z-index:48;top:39px;right:0;width:285px;overflow:hidden;border:1px solid #c8daf4;border-radius:9px;background:#fff;box-shadow:0 18px 45px rgba(34,74,132,.2);color:#263853; }
+.app-user-menu::before { position:absolute;top:-6px;right:25px;width:11px;height:11px;border-top:1px solid #c8daf4;border-left:1px solid #c8daf4;background:#fff;content:"";transform:rotate(45deg); }
+.app-user-menu>header { position:relative;display:flex;align-items:center;gap:10px;padding:14px;border-bottom:1px solid #e4ecf6;background:#fbfdff; }
+.app-user-menu>header img { width:34px;height:34px;border-radius:50%;object-fit:cover; }
+.app-user-menu>header div { display:grid;gap:3px; }.app-user-menu>header strong { font-size:13px; }.app-user-menu>header span { color:#75839a;font-size:10px; }
+.app-user-menu>p { margin:0;padding:10px 14px;border-bottom:1px solid #e9eff7;color:#718098;font-size:10px;line-height:17px; }
+.app-user-menu nav { display:grid;padding:6px; }.app-user-menu nav button { display:flex;align-items:center;justify-content:space-between;height:42px;padding:0 9px;border:0;border-radius:5px;background:#fff;color:#344766;text-align:left;cursor:pointer; }.app-user-menu nav button:hover { background:#f1f6fd;color:#165dff; }.app-user-menu nav button span { font-size:11px; }.app-user-menu nav button em { color:#8491a5;font-size:9px;font-style:normal; }.app-user-menu nav button.danger span { color:#b42318; }
+.app-user-menu>footer { padding:9px 13px;border-top:1px solid #e4ecf6;background:#f7faff;color:#526783;font-size:9px;line-height:15px; }
+
+.app-top-actions__context { color: #65738a; font-size: 13px; }
+.app-top-actions__right { display: flex; align-items: center; gap: 10px; }
+.app-alert-entry { position: relative; z-index: 38; display: inline-flex; }
+.app-alert-bell { position: relative; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid rgba(191,215,250,.96); border-radius: 7px; background: rgba(255,255,255,.9); color: #40516c; cursor: pointer; }
+.app-alert-bell:hover,.app-alert-bell[aria-expanded="true"] { border-color: #8fb7f2; background: #fff; color: #165dff; }
+.app-alert-bell svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.app-alert-bell b { position: absolute; top: -6px; right: -7px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border: 2px solid #eaf3ff; border-radius: 10px; background: #d92d20; color: #fff; font-size: 10px; line-height: 1; }
+.alert-preview { position:absolute;z-index:45;top:38px;right:-8px;width:350px;overflow:hidden;border:1px solid #c8daf4;border-radius:9px;background:#fff;box-shadow:0 18px 45px rgba(34,74,132,.2);color:#263853; }
+.alert-preview::before { position:absolute;top:-6px;right:17px;width:11px;height:11px;border-top:1px solid #c8daf4;border-left:1px solid #c8daf4;background:#fff;content:"";transform:rotate(45deg); }
+.alert-preview>header { display:flex;align-items:center;justify-content:space-between;padding:13px 14px;border-bottom:1px solid #e1eaf6; }
+.alert-preview>header>div { display:flex;align-items:center;gap:8px; }
+.alert-preview>header strong { font-size:14px; }
+.alert-preview>header span { padding:2px 6px;border-radius:999px;background:#e9f8ef;color:#067647;font-size:9px; }
+.alert-preview>header em { color:#7a899f;font-size:9px;font-style:normal; }
+.alert-preview>section { display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:10px 12px;background:#f7faff; }
+.alert-preview>section article { display:grid;gap:2px;padding:9px;border:1px solid #dce8f8;border-radius:6px;background:#fff; }
+.alert-preview>section article strong { color:#165dff;font-size:18px; }
+.alert-preview>section article.danger strong { color:#d92d20; }
+.alert-preview>section article span { color:#71809a;font-size:9px; }
+.alert-preview>div { padding:5px 12px 9px; }
+.alert-preview>div p { display:grid;grid-template-columns:7px minmax(0,1fr);gap:9px;margin:0;padding:8px 2px;border-bottom:1px solid #edf2f8; }
+.alert-preview>div p:last-child { border-bottom:0; }
+.alert-preview>div p>i { width:7px;height:7px;margin-top:5px;border-radius:50%;background:#f79009; }
+.alert-preview>div p>i.is-严重 { background:#d92d20; }
+.alert-preview>div p span { display:grid;gap:2px; }
+.alert-preview>div p strong { overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap; }
+.alert-preview>div p em { color:#8592a6;font-size:9px;font-style:normal; }
+
+.alert-drawer-mask { position: fixed; z-index: 39; inset: 0; border: 0; background: rgba(16,36,76,.18); cursor: default; }
+.alert-drawer { position: fixed; z-index: 40; top: 0; right: 0; display: grid; grid-template-rows: auto auto minmax(0,1fr) auto; width: 430px; height: 100vh; padding: 0; border-left: 1px solid #c8daf4; background: #f8fbff; box-shadow: -18px 0 42px rgba(34,74,132,.2); }
+.alert-drawer>header { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 20px 15px; border-bottom: 1px solid #dce8f8; background: #fff; }
+.alert-drawer h2 { margin: 0; color: #152642; font-size: 19px; }
+.alert-drawer header p { margin: 4px 0 0; color: #73819a; font-size: 12px; }
+.alert-drawer header button { width: 30px; height: 30px; border: 0; border-radius: 5px; background: #f2f6fc; color: #60708b; font-size: 21px; cursor: pointer; }
+.alert-drawer__filter { display: flex; gap: 5px; padding: 10px 16px; border-bottom: 1px solid #dce8f8; background: #fff; }
+.alert-drawer__filter button { height: 28px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: #66758f; font-size: 12px; cursor: pointer; }
+.alert-drawer__filter button.active { background: #eaf2ff; color: #165dff; font-weight: 600; }
+.alert-drawer__list { overflow: auto; padding: 10px; }
+.alert-item { display: grid; grid-template-columns: 8px minmax(0,1fr) 14px; gap: 10px; margin-bottom: 8px; padding: 13px 12px; border: 1px solid #dce8f8; border-radius: 8px; background: #fff; color: #263853; text-decoration: none; }
+.alert-item:hover { border-color: #8fb7f2; box-shadow: 0 6px 16px rgba(48,105,194,.09); }
+.alert-item>i { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: #2e90fa; }
+.alert-item>i.is-严重 { background: #d92d20; box-shadow: 0 0 0 4px #fee4e2; }
+.alert-item>i.is-警告 { background: #f79009; box-shadow: 0 0 0 4px #fef0c7; }
+.alert-item>div>span { display: flex; align-items: center; gap: 7px; color: #77859b; font-size: 11px; }
+.alert-item>div>span b { color: #d92d20; }
+.alert-item>div>span em { margin-left: auto; font-style: normal; }
+.alert-item strong { display: block; margin-top: 7px; color: #233550; font-size: 13px; line-height: 20px; }
+.alert-item p { margin: 4px 0 0; color: #73819a; font-size: 11px; }
+.alert-item small { display: inline-flex; margin-top: 8px; padding: 2px 7px; border-radius: 999px; background: #fee4e2; color: #b42318; font-size: 10px; }
+.alert-item nav { display:flex;justify-content:flex-end;gap:7px;margin-top:11px;padding-top:10px;border-top:1px solid #edf2f8; }
+.alert-item nav a { height:27px;padding:0 10px;border:1px solid #cbdaf0;border-radius:5px;background:#fff;color:#526783;font-size:10px;line-height:25px;text-decoration:none; }
+.alert-item nav a.primary { border-color:#165dff;background:#165dff;color:#fff; }
+.alert-item nav a:hover { border-color:#8fb7f2;color:#165dff; }
+.alert-item nav a.primary:hover { border-color:#4080ff;background:#4080ff;color:#fff; }
+.alert-item__arrow { align-self: center; color: #8ea0b9; font-size: 22px; }
+.alert-drawer>footer { position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; min-height: 58px; padding: 11px 18px; border-top: 1px solid #dce8f8; background: #fff; box-shadow: 0 -8px 18px rgba(42,77,128,.06); }
+.alert-drawer>footer a { color: #165dff; font-size: 12px; text-decoration: none; }
+.alert-drawer>footer .footer-primary { height: 32px; padding: 0 12px; border-radius: 5px; background: #165dff; color: #fff; line-height: 32px; }
+.knowledge-assistant-entry { position:fixed;z-index:52;display:flex;align-items:center;gap:7px;height:42px;padding:0 14px 0 10px;border:1px solid #8fb7f2;border-radius:22px;background:#165dff;color:#fff;box-shadow:0 10px 28px rgba(22,93,255,.28);cursor:grab;touch-action:none;user-select:none; }
+.knowledge-assistant-entry:hover,.knowledge-assistant-entry.active { background:#0f4fd9;transform:translateY(-1px); }.knowledge-assistant-entry svg { width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round; }.knowledge-assistant-entry span { font-size:11px;font-weight:600; }
+.knowledge-assistant-entry.dragging { cursor:grabbing;transform:none;transition:none; }.knowledge-assistant { position:fixed;z-index:51;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;overflow:hidden;border:1px solid #b9d2f5;border-radius:12px;background:#f7faff;box-shadow:0 24px 64px rgba(31,69,125,.28); }
+.knowledge-assistant>header { display:flex;align-items:center;justify-content:space-between;padding:13px 14px;border-bottom:1px solid #dce8f8;background:linear-gradient(110deg,#eef5ff,#fff); }.knowledge-assistant>header>div { display:flex;align-items:center;gap:9px; }.knowledge-assistant>header i { display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:#165dff;color:#fff;font-size:10px;font-style:normal;font-weight:700; }.knowledge-assistant>header span { display:grid;gap:2px; }.knowledge-assistant>header strong { font-size:13px; }.knowledge-assistant>header em { color:#72819a;font-size:9px;font-style:normal; }.knowledge-assistant>header button { width:28px;height:28px;border:0;border-radius:5px;background:#edf3fb;color:#5f6f88;font-size:19px;cursor:pointer; }
+.knowledge-assistant__messages { display:flex;min-height:0;gap:9px;padding:13px;overflow:auto;flex-direction:column; }.knowledge-assistant__messages article { align-self:flex-start;max-width:86%;padding:10px 11px;border:1px solid #d9e6f7;border-radius:3px 10px 10px;background:#fff;color:#344761; }.knowledge-assistant__messages article.is-user { align-self:flex-end;border-color:#165dff;border-radius:10px 3px 10px 10px;background:#165dff;color:#fff; }.knowledge-assistant__messages p { margin:0;font-size:11px;line-height:18px; }.knowledge-assistant__messages article>div { display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:8px;padding-top:7px;border-top:1px solid #e7eef8; }.knowledge-assistant__messages article>div span { width:100%;color:#8491a5;font-size:8px; }.knowledge-assistant__messages article>div b { padding:2px 6px;border-radius:99px;background:#eaf2ff;color:#175cd3;font-size:8px;font-weight:500; }
+.knowledge-assistant__full { padding:8px 13px;border-top:1px solid #e2eaf5;background:#fff;color:#165dff;font-size:9px;text-decoration:none; }
+.knowledge-assistant>form { display:grid;grid-template-columns:minmax(0,1fr) 54px;gap:8px;padding:10px;border-top:1px solid #dce8f8;background:#fff; }.knowledge-assistant textarea { box-sizing:border-box;height:54px;padding:8px 9px;border:1px solid #bdd0ea;border-radius:6px;color:#344761;font:10px/16px inherit;resize:none; }.knowledge-assistant form button { border:0;border-radius:6px;background:#165dff;color:#fff;font-size:10px;cursor:pointer; }.knowledge-assistant form button:disabled { background:#a9bee0;cursor:not-allowed; }
+@media(max-width:620px){.app-user-menu{right:-2px;width:270px}}
+
 .app-workspace {
-  height: 100%;
+  height: calc(100% - 42px);
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -508,6 +847,11 @@ onErrorCaptured((error) => {
   .app-nav__item--active {
     width: min(218px, calc(100% - 30px));
   }
+}
+
+@media (max-width: 1050px) {
+  .app-top-actions__user span { display: none; }
+  .alert-drawer { width: min(430px, 94vw); }
 }
 
 @media (max-height: 720px) {
