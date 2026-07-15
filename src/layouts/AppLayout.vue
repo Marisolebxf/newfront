@@ -43,11 +43,14 @@ const assistantMessages = ref<Array<{ role: 'assistant' | 'user'; content: strin
 ])
 const alertFilter = ref<'全部' | '已阻断' | '待处理'>('全部')
 const alertItems = [
-  { id: 'ALT-0713-018', severity: '严重', module: '图谱构建', title: '大模型输出未通过 Schema 校验', batch: 'UPD-20260714', meta: 'UPD-20260714 · 326 条异常', time: '2 分钟前', blocked: true, to: '/tasks?module=图谱构建&batch=UPD-20260714' },
-  { id: 'ALT-0713-014', severity: '严重', module: '数据处理', title: '论文唯一性质检规则失败', batch: 'UPD-20260714', meta: 'UPD-20260714 · 385 条已隔离', time: '36 分钟前', blocked: true, to: '/tasks?module=数据处理&batch=UPD-20260714' },
-  { id: 'ALT-0712-106', severity: '警告', module: '图谱构建', title: '实体消歧候选置信度偏低', batch: 'UPD-20260713', meta: 'UPD-20260713 · 42 条已完成确认', time: '昨日 18:06', blocked: false, to: '/manual-review?tab=history&batch=UPD-20260713' },
+  { id: 'ALT-0714-018', severity: '严重', module: '图谱构建', title: '大模型输出未通过 Schema 校验', batch: 'UPD-20260714', meta: 'UPD-20260714 · 326 条异常任务', time: '2 分钟前', blocked: true, status: '待处理', detailTo: '/alerts?keyword=ALT-0714-018', queueTo: '/manual-review?batch=UPD-20260714' },
+  { id: 'ALT-0714-014', severity: '严重', module: '数据处理', title: '论文唯一性质检规则失败', batch: 'UPD-20260714', meta: 'UPD-20260714 · 385 条异常任务', time: '36 分钟前', blocked: true, status: '待处理', detailTo: '/alerts?keyword=ALT-0714-014', queueTo: '/manual-review?batch=UPD-20260714' },
+  { id: 'ALT-0713-106', severity: '警告', module: '图谱构建', title: '实体消歧候选置信度偏低', batch: 'UPD-20260713', meta: 'UPD-20260713 · 42 条已完成确认', time: '昨日 18:06', blocked: false, status: '已完成', detailTo: '/alerts?keyword=ALT-0713-106', queueTo: '/manual-review?tab=history&batch=UPD-20260713' },
 ]
-const filteredAlertItems = computed(() => alertItems.filter((item) => alertFilter.value === '全部' || (alertFilter.value === '已阻断' ? item.blocked : !item.blocked)))
+const filteredAlertItems = computed(() => alertItems.filter((item) => (
+  alertFilter.value === '全部'
+  || (alertFilter.value === '已阻断' ? item.blocked : item.status === '待处理')
+)))
 const serviceNavItems = [
   { to: '/expert-direct', label: '专家直接关系', fullLabel: '科技专家直接关系' },
   { to: '/node-indirect', label: '单节点间接关系', fullLabel: '科技单节点间接关系' },
@@ -329,7 +332,7 @@ onBeforeUnmount(() => {
           <div class="alert-drawer__list">
             <article v-for="item in filteredAlertItems" :key="item.id" class="alert-item">
               <i :class="`is-${item.severity}`"></i>
-              <div><span><b>{{ item.severity }}</b>{{ item.module }}<em>{{ item.time }}</em></span><strong>{{ item.title }}</strong><p>{{ item.meta }}</p><small v-if="item.blocked">已阻断下游处理</small><nav><RouterLink :to="item.to">查看诊断</RouterLink><RouterLink class="primary" :to="`/manual-review?batch=${item.batch}`">人工处理</RouterLink></nav></div>
+              <div><span><b>{{ item.severity }}</b>{{ item.module }}<em>{{ item.time }}</em></span><strong>{{ item.title }}</strong><p>{{ item.meta }}</p><small :class="{ 'is-completed': item.status === '已完成' }">{{ item.status === '已完成' ? '处理已完成' : '已阻断下游处理' }}</small><nav><RouterLink :to="item.detailTo">查看异常详情</RouterLink><RouterLink class="primary" :to="item.queueTo">{{ item.status === '已完成' ? '查看处理记录' : '查看处理队列' }}</RouterLink></nav></div>
             </article>
           </div>
           <footer><RouterLink to="/alerts">查看全部异常</RouterLink><RouterLink class="footer-primary" to="/manual-review">查看全部人工处理任务 →</RouterLink></footer>
@@ -785,8 +788,9 @@ onBeforeUnmount(() => {
 .alert-item strong { display: block; margin-top: 7px; color: #233550; font-size: 13px; line-height: 20px; }
 .alert-item p { margin: 4px 0 0; color: #73819a; font-size: 11px; }
 .alert-item small { display: inline-flex; margin-top: 8px; padding: 2px 7px; border-radius: 999px; background: #fee4e2; color: #b42318; font-size: 10px; }
+.alert-item small.is-completed { background:#e9f8ef;color:#067647; }
 .alert-item nav { display:flex;justify-content:flex-end;gap:7px;margin-top:11px;padding-top:10px;border-top:1px solid #edf2f8; }
-.alert-item nav a { height:27px;padding:0 10px;border:1px solid #cbdaf0;border-radius:5px;background:#fff;color:#526783;font-size:10px;line-height:25px;text-decoration:none; }
+.alert-item nav a { height:30px;padding:0 11px;border:1px solid #cbdaf0;border-radius:5px;background:#fff;color:#526783;font-size:12px;line-height:28px;text-decoration:none;white-space:nowrap; }
 .alert-item nav a.primary { border-color:#165dff;background:#165dff;color:#fff; }
 .alert-item nav a:hover { border-color:#8fb7f2;color:#165dff; }
 .alert-item nav a.primary:hover { border-color:#4080ff;background:#4080ff;color:#fff; }
