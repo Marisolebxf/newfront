@@ -43,9 +43,9 @@ const assistantMessages = ref<Array<{ role: 'assistant' | 'user'; content: strin
 ])
 const alertFilter = ref<'全部' | '已阻断' | '待处理'>('全部')
 const alertItems = [
-  { id: 'ALT-0714-018', severity: '严重', module: '图谱构建', title: '大模型输出未通过 Schema 校验', batch: 'UPD-20260714', meta: 'UPD-20260714 · 326 条异常任务', time: '2 分钟前', blocked: true, status: '待处理', detailTo: '/alerts?keyword=ALT-0714-018', queueTo: '/manual-review?batch=UPD-20260714' },
-  { id: 'ALT-0714-014', severity: '严重', module: '数据处理', title: '论文唯一性质检规则失败', batch: 'UPD-20260714', meta: 'UPD-20260714 · 385 条异常任务', time: '36 分钟前', blocked: true, status: '待处理', detailTo: '/alerts?keyword=ALT-0714-014', queueTo: '/manual-review?batch=UPD-20260714' },
-  { id: 'ALT-0713-106', severity: '警告', module: '图谱构建', title: '实体消歧候选置信度偏低', batch: 'UPD-20260713', meta: 'UPD-20260713 · 42 条已完成确认', time: '昨日 18:06', blocked: false, status: '已完成', detailTo: '/alerts?keyword=ALT-0713-106', queueTo: '/manual-review?tab=history&batch=UPD-20260713' },
+  { id: 'PI-20260714-0004', severity: '严重', module: '图谱构建', title: '张明远候选实体存在冲突', meta: 'PI-20260714-0004 · 实体对齐 · 置信度 0.82', time: '2 分钟前', blocked: true, status: '待处理', detailTo: '/processing-instance/PI-20260714-0004', reviewTo: '/manual-review/task/PI-20260714-0004' },
+  { id: 'PI-20260714-0007', severity: '严重', module: '数据处理', title: '重复论文成果记录待确认', meta: 'PI-20260714-0007 · 唯一性校验 · 置信度 0.69', time: '36 分钟前', blocked: true, status: '待处理', detailTo: '/processing-instance/PI-20260714-0007', reviewTo: '/manual-review/task/PI-20260714-0007' },
+  { id: 'PI-20260714-0005', severity: '警告', module: '图谱构建', title: '企业合作关系证据不足', meta: 'PI-20260714-0005 · 关系证据校验 · 陈治理处理中', time: '今日 10:31', blocked: false, status: '处理中', detailTo: '/processing-instance/PI-20260714-0005', reviewTo: '/manual-review/task/PI-20260714-0005' },
 ]
 const filteredAlertItems = computed(() => alertItems.filter((item) => (
   alertFilter.value === '全部'
@@ -288,13 +288,13 @@ onBeforeUnmount(() => {
             <span class="app-top-actions__context">{{ pageTitle }}</span>
             <div class="app-top-actions__right">
               <div class="app-alert-entry" @mouseenter="alertPreviewOpen = !alertDrawerOpen" @mouseleave="alertPreviewOpen = false">
-                <button class="app-alert-bell" type="button" aria-label="7 条未读告警" :aria-expanded="alertDrawerOpen" @click="openAlertDrawer">
+                <button class="app-alert-bell" type="button" aria-label="3 条人工审核任务通知" :aria-expanded="alertDrawerOpen" @click="openAlertDrawer">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
-                  <b>7</b>
+                  <b>3</b>
                 </button>
-                <aside v-if="alertPreviewOpen" class="alert-preview" aria-label="异常总览">
-                  <header><div><strong>异常总览</strong><span>实时监测</span></div><em>点击铃铛查看全部</em></header>
-                  <section><article><strong>7</strong><span>未读异常</span></article><article class="danger"><strong>2</strong><span>已阻断任务</span></article><article><strong>711</strong><span>隔离记录</span></article></section>
+                <aside v-if="alertPreviewOpen" class="alert-preview" aria-label="人工审核任务概览">
+                  <header><div><strong>人工审核任务</strong><span>实时更新</span></div><em>点击铃铛查看全部</em></header>
+                  <section><article><strong>3</strong><span>待办通知</span></article><article class="danger"><strong>2</strong><span>已阻断任务</span></article><article><strong>1</strong><span>处理中任务</span></article></section>
                   <div><p v-for="item in alertItems.slice(0, 2)" :key="item.id"><i :class="`is-${item.severity}`" /><span><strong>{{ item.title }}</strong><em>{{ item.module }} · {{ item.time }}</em></span></p></div>
                 </aside>
               </div>
@@ -326,16 +326,16 @@ onBeforeUnmount(() => {
           </section>
         </main>
         <button v-if="alertDrawerOpen" class="alert-drawer-mask" type="button" aria-label="关闭告警抽屉" @click="alertDrawerOpen = false" />
-        <aside v-if="alertDrawerOpen" class="alert-drawer" aria-label="异常通知">
-          <header><div><h2>异常通知</h2><p>7 条未读 · 2 个任务已阻断</p></div><button type="button" aria-label="关闭" @click="alertDrawerOpen = false">×</button></header>
+        <aside v-if="alertDrawerOpen" class="alert-drawer" aria-label="人工审核任务通知">
+          <header><div><h2>人工审核任务</h2><p>3 条待办 · 2 个任务已阻断</p></div><button type="button" aria-label="关闭" @click="alertDrawerOpen = false">×</button></header>
           <div class="alert-drawer__filter"><button v-for="item in (['全部', '已阻断', '待处理'] as const)" :key="item" :class="{ active: alertFilter === item }" type="button" @click="alertFilter = item">{{ item }}</button></div>
           <div class="alert-drawer__list">
             <article v-for="item in filteredAlertItems" :key="item.id" class="alert-item">
               <i :class="`is-${item.severity}`"></i>
-              <div><span><b>{{ item.severity }}</b>{{ item.module }}<em>{{ item.time }}</em></span><strong>{{ item.title }}</strong><p>{{ item.meta }}</p><small :class="{ 'is-completed': item.status === '已完成' }">{{ item.status === '已完成' ? '处理已完成' : '已阻断下游处理' }}</small><nav><RouterLink :to="item.detailTo">查看异常详情</RouterLink><RouterLink class="primary" :to="item.queueTo">{{ item.status === '已完成' ? '查看处理记录' : '查看处理队列' }}</RouterLink></nav></div>
+              <div><span><b>{{ item.severity }}</b>{{ item.module }}<em>{{ item.time }}</em></span><strong>{{ item.title }}</strong><p>{{ item.meta }}</p><small :class="{ 'is-processing': item.status === '处理中' }">{{ item.status === '处理中' ? '人工处理中' : '已阻断下游处理' }}</small><nav><RouterLink :to="item.detailTo">查看详情</RouterLink><RouterLink class="primary" :to="item.reviewTo">人工处理</RouterLink></nav></div>
             </article>
           </div>
-          <footer><RouterLink to="/alerts">查看全部异常</RouterLink><RouterLink class="footer-primary" to="/manual-review">查看全部人工处理任务 →</RouterLink></footer>
+          <footer><RouterLink to="/tasks">查看全部任务</RouterLink><RouterLink class="footer-primary" to="/manual-review">查看处理队列 →</RouterLink></footer>
         </aside>
         <aside v-if="assistantOpen" class="knowledge-assistant" :style="assistantPanelStyle" aria-label="知识图谱助手">
           <header><div><i>AI</i><span><strong>知识图谱助手</strong><em>图谱检索 + 大模型分析</em></span></div><button type="button" aria-label="关闭知识助手" @click="assistantOpen=false">×</button></header>
@@ -788,7 +788,7 @@ onBeforeUnmount(() => {
 .alert-item strong { display: block; margin-top: 7px; color: #233550; font-size: 13px; line-height: 20px; }
 .alert-item p { margin: 4px 0 0; color: #73819a; font-size: 11px; }
 .alert-item small { display: inline-flex; margin-top: 8px; padding: 2px 7px; border-radius: 999px; background: #fee4e2; color: #b42318; font-size: 10px; }
-.alert-item small.is-completed { background:#e9f8ef;color:#067647; }
+.alert-item small.is-processing { background:#eaf2ff;color:#175cd3; }
 .alert-item nav { display:flex;justify-content:flex-end;gap:7px;margin-top:11px;padding-top:10px;border-top:1px solid #edf2f8; }
 .alert-item nav a { height:30px;padding:0 11px;border:1px solid #cbdaf0;border-radius:5px;background:#fff;color:#526783;font-size:12px;line-height:28px;text-decoration:none;white-space:nowrap; }
 .alert-item nav a.primary { border-color:#165dff;background:#165dff;color:#fff; }

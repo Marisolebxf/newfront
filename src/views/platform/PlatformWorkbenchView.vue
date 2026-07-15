@@ -358,16 +358,16 @@ const buildStats = [
 ]
 
 const latestChanges = [
-  { time: '10:30', type: '更新', domain: '企业域', title: '企业工商要素增量更新完成', detail: '新增 1,248 家企业，更新注册资本、上市状态和行业分类', impact: '影响 Organization、HAS_PRODUCT', to: '/task-detail/processing/DP-20260713-1030?step=normalize' },
-  { time: '10:18', type: '对齐', domain: '专利域', title: '专利发明人与专家实体对齐', detail: '2,418 个候选实体完成对齐，42 个低置信度对象转人工确认', impact: '影响 Expert、INVENT_PATENT', to: '/task-detail/construction/KG-INC-20260713-016?step=align' },
-  { time: '10:13', type: '新增', domain: '论文域', title: '论文与人才图谱增量构建', detail: '已抽取 3,261 个实体、8,942 条关系，326 条未通过 Schema 校验', impact: '影响 Paper、Expert、PUBLISH', to: '/task-detail/construction/KG-INC-20260713-018?step=llm' },
-  { time: '09:48', type: '质量', domain: '论文域', title: '论文唯一性规则检测到冲突', detail: 'paper_id 对应多条来源记录，385 条数据已隔离', impact: '阻断标准表写入', to: '/task-detail/processing/DP-20260713-0200?step=quality' },
+  { time: '10:30', type: '更新', domain: '机构域', title: '清华大学机构属性更新完成', detail: '机构简称与统一标识已完成标准化更新', impact: '处理实例 PI-20260714-0002', to: '/processing-instance/PI-20260714-0002' },
+  { time: '10:18', type: '对齐', domain: '人才域', title: '陈卓候选专家实体完成对齐', detail: '机构别名经人工确认后，候选实体已合并至标准专家实体', impact: '处理实例 PI-20260713-0008', to: '/processing-instance/PI-20260713-0008' },
+  { time: '10:13', type: '新增', domain: '人才域', title: '张明远标准专家实体构建完成', detail: '完成来源读取、Schema 映射、实体标准化与图谱入库', impact: '处理实例 PI-20260714-0001', to: '/processing-instance/PI-20260714-0001' },
+  { time: '09:48', type: '质量', domain: '论文域', title: '重复论文成果记录等待确认', detail: '同一 paper_id 对应三条来源记录，需要人工确认主记录', impact: '处理实例 PI-20260714-0007', to: '/processing-instance/PI-20260714-0007' },
   { time: '昨日', type: 'Schema', domain: '全域', title: '统一 Schema v1.8 已发布', detail: '确认 11 个首版必落实体、42 个标准事实关系和 9 类候选实体', impact: '所有新建批次使用 v1.8', to: '/schema' },
 ]
 
 const managementRisks = [
-  { level: '严重', title: '今日数据更新批次待处理', detail: '711 个异常处理实例已隔离，处理后发布', to: '/manual-review?batch=UPD-20260714', action: '进入处理' },
-  { level: '警告', title: '人工审核正在进行', detail: '异常已隔离、主流程未扩大影响 · 43 条处理中', to: '/manual-review?status=处理中', action: '查看批次' },
+  { level: '严重', title: '张明远候选实体存在冲突', detail: 'PI-20260714-0004 · 实体对齐 · 待王审核确认', detailTo: '/processing-instance/PI-20260714-0004', reviewTo: '/manual-review/task/PI-20260714-0004' },
+  { level: '严重', title: '重复论文成果记录待确认', detail: 'PI-20260714-0007 · 唯一性校验 · 待李质量确认', detailTo: '/processing-instance/PI-20260714-0007', reviewTo: '/manual-review/task/PI-20260714-0007' },
 ]
 
 
@@ -698,8 +698,8 @@ const pageMeta = computed(() => {
         </div>
 
         <aside class="kg-panel platform-risk-panel">
-          <div class="kg-panel__header"><div><h2 class="kg-panel__title">待我处理</h2><span>2 个批次 · 711 条异常已隔离</span></div><RouterLink to="/manual-review">查看全部任务 →</RouterLink></div>
-          <div class="platform-risk-list"><article v-for="item in managementRisks" :key="item.title" :class="`is-${item.level}`"><i /><div><span><b>{{ item.level }}</b></span><strong>{{ item.title }}</strong><p>{{ item.detail }}</p><RouterLink :to="item.to">{{ item.action }} →</RouterLink></div></article></div>
+          <div class="kg-panel__header"><div><h2 class="kg-panel__title">需要人工审核的任务</h2><span>展示分配给当前用户的具体处理实例</span></div><RouterLink to="/manual-review">查看处理队列 →</RouterLink></div>
+          <div class="platform-risk-list"><article v-for="item in managementRisks" :key="item.title" :class="`is-${item.level}`"><i /><div><span><b>{{ item.level }}</b></span><strong>{{ item.title }}</strong><p>{{ item.detail }}</p><nav><RouterLink :to="item.detailTo">查看详情</RouterLink><RouterLink class="primary" :to="item.reviewTo">人工处理</RouterLink></nav></div></article></div>
         </aside>
       </section>
 
@@ -1503,7 +1503,10 @@ print(response.json())</pre>
 .platform-risk-list { display:grid; }.platform-risk-list article { position:relative;display:grid;grid-template-columns:9px minmax(0,1fr);gap:10px;min-height:88px;padding:14px;border-bottom:1px solid #e3ebf6;background:#fff; }.platform-risk-list article:last-child { border-bottom:0; }
 .platform-risk-list article>i { width:8px;height:8px;margin-top:5px;border-radius:50%;background:#f79009;box-shadow:0 0 0 4px #fef0c7; }.platform-risk-list article.is-严重>i { background:#d92d20;box-shadow:0 0 0 4px #fee4e2; }
 .platform-risk-list article>div { display:grid;grid-template-columns:1fr auto;gap:3px 8px; }.platform-risk-list article span { grid-column:1/3; }.platform-risk-list article span b { padding:2px 6px;border-radius:99px;background:#fff3df;color:#b54708;font-size:8px; }.platform-risk-list article.is-严重 span b { background:#fee4e2;color:#b42318; }
-.platform-risk-list article strong { grid-column:1/3;color:#253752;font-size:11px; }.platform-risk-list article p { grid-column:1;margin:0;color:#7b899e;font-size:9px;line-height:15px; }.platform-risk-list article a { align-self:end;color:#165dff;font-size:9px;text-decoration:none;white-space:nowrap; }
+.platform-risk-list article strong { grid-column:1/3;color:#253752;font-size:11px; }.platform-risk-list article p { grid-column:1/3;margin:0;color:#7b899e;font-size:9px;line-height:15px; }
+.platform-risk-list article nav { grid-column:1/3;display:flex;justify-content:flex-end;gap:8px;margin-top:7px; }
+.platform-risk-list article a { display:inline-flex;align-items:center;height:28px;padding:0 9px;border:1px solid #cbdaf0;border-radius:5px;background:#fff;color:#165dff;font-size:11px;text-decoration:none;white-space:nowrap; }
+.platform-risk-list article a.primary { border-color:#165dff;background:#165dff;color:#fff; }
 
 .platform-monitor-grid { display:grid;grid-template-columns:minmax(0,1fr) minmax(480px,1fr);gap:14px; }
 .platform-trend-legend { display:flex!important;align-items:center;gap:10px!important; }.platform-trend-legend span { display:flex;align-items:center;gap:5px; }.platform-trend-legend i { width:7px;height:7px;border-radius:2px;background:#2e90fa; }.platform-trend-legend span:last-child i { background:#7a5af8; }
