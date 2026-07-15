@@ -2,78 +2,120 @@
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { getReviewBatch, getReviewRecord, type ReviewRecord } from './manual-review-data'
+import { getReviewRecord, type ReviewRecord } from './manual-review-data'
 
 const route = useRoute()
 const sourceRecord = getReviewRecord(String(route.params.instanceId || ''))
 const record = ref<ReviewRecord | undefined>(sourceRecord ? { ...sourceRecord } : undefined)
-const batch = computed(() => record.value ? getReviewBatch(record.value.batch) : undefined)
+const isSupported = computed(() => Boolean(record.value))
 const isHistory = computed(() => record.value?.status === '已完成')
-const isInProgress = computed(() => record.value?.status === '处理中')
 const isEditable = computed(() => record.value?.status === '待处理')
-const correction = ref(record.value?.sourceResult ?? '')
-const note = ref(record.value?.decisionNote ?? record.value?.suggestion ?? '')
-const decision = ref(record.value?.decision ?? '修正后通过')
+const entityTypes = [
+  { value: 'Expert', label: '专家 / 人才 / 学者' }, { value: 'Organization', label: '机构 / 企业' }, { value: 'Paper', label: '论文' },
+  { value: 'Project', label: '项目' }, { value: 'Patent', label: '专利' }, { value: 'Report', label: '报告' }, { value: 'Policy', label: '政策' },
+  { value: 'Event', label: '事件 / 资讯' }, { value: 'IndustryChainNode', label: '产业链节点' }, { value: 'Product', label: '产品' },
+  { value: 'ResearchField', label: '研究方向' }, { value: 'Person', label: '通用人员' }, { value: 'Publication', label: '期刊 / 会议' }, { value: 'IndustryChain', label: '产业链' },
+]
+const expertFields = ['expert_id', 'name_zh', 'name_en', 'organization_name_zh', 'bio_zh', 'bio_en', 'paper_count', 'citation_count', 'h_index']
+const organizationFields = ['org_id', 'name_zh', 'name_en', 'external_id', 'credit_code', 'org_category', 'province', 'city', 'address', 'registered_capital_value']
+const paperFields = ['paper_id', 'doi', 'title_zh', 'title_en', 'publish_year', 'abstract_zh', 'abstract_en', 'keywords', 'source_type']
+const patentFields = ['patent_id', 'publication_number', 'application_number', 'application_date', 'legal_status', 'ipc_main', 'cpc_main']
+const relationTypes = ['HAS_RESEARCH_FIELD', 'PUBLISH', 'WORKS_AT', 'AFFILIATED_WITH', 'CO_AUTHOR', 'PARTICIPATE_IN', 'INVENT_PATENT', 'COOPERATE_WITH', 'HAS_PRODUCT', 'BELONGS_TO_CHAIN_NODE']
+type MappingOption = { value: string; label: string }
+type MappingRow = { source: string; sample: string; scope: string; target: string; options: MappingOption[] }
+const fieldOptions = (scope: string, fields: string[]): MappingOption[] => fields.map((value) => ({ value, label: `${scope}.${value}` }))
+const entityOptions: MappingOption[] = entityTypes.map((item) => ({ value: item.value, label: `${item.value}（${item.label}）` }))
+const relationOptions: MappingOption[] = relationTypes.map((value) => ({ value, label: value }))
+const buildMappingRows = (item?: ReviewRecord): MappingRow[] => {
+  if (!item) return []
+  if (item.id === 'PI-20260714-0101') return [
+    { source: 'object_type', sample: 'PersonMention', scope: '标准实体', target: 'Expert', options: entityOptions },
+    { source: 'person_name', sample: '张明远', scope: 'Expert', target: 'name_zh', options: fieldOptions('Expert', expertFields) },
+    { source: 'employer', sample: '中国科学院自动化研究所', scope: 'Expert', target: 'organization_name_zh', options: fieldOptions('Expert', expertFields) },
+  ]
+  if (item.id === 'PI-20260714-0102') return [
+    { source: 'corp_name', sample: '华南智能芯片有限公司', scope: 'Organization', target: 'name_zh', options: fieldOptions('Organization', organizationFields) },
+    { source: 'credit_no', sample: '91440300MA5F…', scope: 'Organization', target: 'credit_code', options: fieldOptions('Organization', organizationFields) },
+    { source: 'registered_capital', sample: '5000 万元', scope: 'Organization', target: 'registered_capital_value', options: fieldOptions('Organization', organizationFields) },
+  ]
+  if (item.type === '公共字典配置异常' || item.domain === '专利') return [
+    { source: 'legal_status_raw', sample: 'substantive-review', scope: 'Patent', target: 'legal_status', options: fieldOptions('Patent', patentFields) },
+  ]
+  if (item.type === '关系证据不足' || item.objectType.includes('关系')) return [
+    { source: 'relation_type', sample: item.sourceResult, scope: '事实关系', target: item.sourceResult.match(/[A-Z_]{3,}/)?.[0] ?? 'COOPERATE_WITH', options: relationOptions },
+  ]
+  if (item.type === '实体类型错误') return [
+    { source: 'entity_type', sample: item.sourceResult, scope: '标准实体', target: 'Expert', options: entityOptions },
+  ]
+  if (item.objectType.includes('实体')) return [
+    { source: 'person_name', sample: item.object.split('/')[0].trim(), scope: 'Expert', target: 'name_zh', options: fieldOptions('Expert', expertFields) },
+    { source: 'organization', sample: item.domain === '人才' ? '待核对机构' : item.domain, scope: 'Expert', target: 'organization_name_zh', options: fieldOptions('Expert', expertFields) },
+  ]
+  if (item.type === '属性冲突') return [
+    { source: 'organization', sample: item.sourceResult, scope: 'Expert', target: 'organization_name_zh', options: fieldOptions('Expert', expertFields) },
+  ]
+  return [
+    { source: item.type === '必填缺失' ? 'title' : item.type === '枚举异常' ? 'source_type' : 'paper_id', sample: item.sourceResult, scope: 'Paper', target: item.type === '必填缺失' ? 'title_zh' : item.type === '枚举异常' ? 'source_type' : 'paper_id', options: fieldOptions('Paper', paperFields) },
+  ]
+}
+const mappingRows = ref<MappingRow[]>(buildMappingRows(record.value))
+const note = ref(record.value?.decisionNote ?? '')
 const feedback = ref('')
+const primaryAction = computed(() => '保存字段映射并重跑')
 
 const backPath = computed(() => isHistory.value ? '/manual-review?tab=history' : `/manual-review?batch=${record.value?.batch ?? ''}`)
-const timeline = computed(() => {
-  if (!record.value) return []
-  const items = [
-    { time: record.value.updatedAt, title: '转入人工处理', detail: `${record.value.node}检测到${record.value.type}，异常对象已隔离。` },
-    { time: record.value.updatedAt, title: '任务分派', detail: `已分派给 ${record.value.handler}，处理实例 ID 为 ${record.value.id}。` },
-  ]
-  if (record.value.status === '处理中') items.push({ time: record.value.updatedAt, title: '开始人工处理', detail: `${record.value.handler} 已领取该任务，当前正在核对证据并编辑处理草稿。` })
-  if (record.value.status === '已完成') items.push({ time: record.value.completedAt ?? record.value.updatedAt, title: record.value.decision ?? '处理完成', detail: record.value.decisionNote ?? '人工结果已回写，并完成重新校验。' })
-  return items
-})
-
-const handleReview = (action: '驳回上游' | '忽略异常' | '提交') => {
+const handleReview = (action: string) => {
   if (!record.value) return
-  const finalDecision = action === '提交' ? decision.value : action
   record.value.status = '已完成'
-  record.value.decision = finalDecision
-  if (action === '提交' && correction.value.trim()) record.value.sourceResult = correction.value.trim()
+  record.value.decision = action
+  if (action === primaryAction.value) {
+    record.value.sourceResult = mappingRows.value.map((item) => `${item.source} → ${item.scope}.${item.target}`).join('；')
+  }
   record.value.decisionNote = note.value
   record.value.completedAt = '2026-07-15 11:08:26'
   record.value.updatedAt = '刚刚'
-  feedback.value = finalDecision === '驳回上游'
+  feedback.value = action === '驳回上游'
     ? '处理结果已回写，该对象将返回上游节点重新处理。'
-    : '人工处理结果已提交，系统正在重新校验，通过后自动恢复下游执行。'
+    : action.includes('重跑') || action.includes('重试')
+      ? `修正结果已回写，系统已从“${record.value.node}”创建新的重跑实例。重跑状态请到任务中心查看。`
+      : '处理结果已回写。'
 }
 </script>
 
 <template>
-  <div v-if="record" class="review-workspace review-task-detail">
+  <div v-if="record && isSupported" class="review-workspace review-task-detail">
     <header class="review-workspace__head">
-      <div><RouterLink :to="backPath">← 返回人工处理</RouterLink><h1>{{ isHistory ? '人工处理记录' : isInProgress ? '人工处理进度' : '人工处理详情' }}</h1><p>{{ record.id }} · {{ record.module }} / {{ record.node }} · {{ record.batch }}</p></div>
-      <div class="review-workspace__head-actions"><span :class="['severity-badge', `is-${batch?.severity || '提示'}`]">{{ batch?.severity || '提示' }}</span><span :class="['batch-status', `is-${record.status}`]">{{ record.status }}</span><RouterLink :to="`/processing-instance/${record.id}`">查看完整任务实例</RouterLink></div>
+      <div><RouterLink :to="backPath">← 返回处理队列</RouterLink><h1>{{ isHistory ? '处理记录' : '人工审核' }}</h1><p>{{ record.id }} · {{ record.handler }}</p></div>
+      <span :class="['batch-status', `is-${record.status}`]">{{ record.status }}</span>
     </header>
 
-    <section class="review-object-card"><div><span>待处理对象</span><h2>{{ record.object }}</h2><p>{{ record.objectType }} · {{ record.objectId }}</p></div><em>{{ record.type }}</em></section>
-    <section class="review-meta-grid"><article><span>数据域</span><strong>{{ record.domain }}域</strong></article><article><span>来源记录</span><strong>{{ record.sourceTable }}<br>{{ record.sourceRecordId }}</strong></article><article><span>所属更新批次</span><strong>{{ record.batch }}<br>{{ batch?.dataWindow }}</strong></article><article><span>处理人</span><strong>{{ record.handler }}</strong></article><article><span>置信度</span><strong>{{ record.score }}</strong></article></section>
-
-    <section v-if="isInProgress" class="review-progress-panel"><header><div><h2>当前处理进度</h2><p>该任务正由 {{ record.handler }} 处理，当前页为只读进度视图</p></div><span>处理中</span></header><div><article><span>当前处理人</span><strong>{{ record.handler }}</strong></article><article><span>开始时间</span><strong>2026-07-14 {{ record.updatedAt.split(' ').at(-1) }}</strong></article><article><span>当前步骤</span><strong>核对证据与修正内容</strong></article><article><span>最近保存</span><strong>{{ record.updatedAt }} · 草稿已保存</strong></article><article><span>处理锁定</span><strong>已由 {{ record.handler }} 锁定</strong></article></div></section>
-
     <main class="review-task-body">
-      <section class="decision-result"><h3>异常原因</h3><p>规则 <b>{{ record.ruleId }}</b>：{{ record.evidence }}。当前对象已隔离，人工处理完成前不会进入下游节点。</p></section>
+      <section class="issue-summary">
+        <header><span>1</span><div><h2>异常诊断</h2><p>{{ record.node }} · {{ record.type }}</p></div></header>
+        <div class="issue-location"><strong>{{ record.object }}</strong><span>{{ record.objectType }} · {{ record.objectId }}</span><span>{{ record.sourceTable }} / {{ record.sourceRecordId }}</span></div>
+        <p class="issue-reason">{{ record.evidence }}</p>
+        <p class="issue-current">当前结果：{{ record.sourceResult }}</p>
+      </section>
 
-      <div class="review-compare">
-        <article><span>系统识别结果</span><strong>{{ record.sourceResult }}</strong><p>{{ record.module }} · {{ record.node }}</p><em>置信度 {{ record.score }}</em></article>
-        <article><span>{{ isHistory ? '最终处理结果' : isInProgress ? '当前处理草稿' : '人工修正结果' }}</span><template v-if="isEditable"><textarea v-model="correction" aria-label="人工修正结果" placeholder="请填写修正后的实体、关系或字段值" /><textarea v-model="note" aria-label="处理说明" placeholder="请填写判定依据与处理说明" /></template><template v-else-if="isInProgress"><strong>{{ record.suggestion }}</strong><p>处理草稿尚未提交，修正内容由 {{ record.handler }} 继续编辑。</p><em>最近保存 {{ record.updatedAt }}</em></template><template v-else><strong>{{ record.decision }}</strong><p>{{ record.decisionNote }}</p><em>完成于 {{ record.completedAt }}</em></template></article>
-      </div>
+      <section class="review-editor">
+        <header><span>2</span><div><h2>字段映射配置</h2><p>{{ record.suggestion }}</p></div></header>
 
-      <section v-if="isEditable" class="decision-options"><h3>处理决策</h3><div><label v-for="item in ['修正后通过','直接通过','忽略异常']" :key="item" :class="{ active: decision === item }"><input v-model="decision" type="radio" :value="item" />{{ item }}</label></div><p>提交后将回写同一处理实例，并从当前失败节点触发重新校验。</p></section>
+        <div v-if="isEditable" class="review-form">
+          <div class="mapping-head"><span>来源字段</span><span>样例值</span><span>Schema 目标项</span></div>
+          <div v-for="item in mappingRows" :key="item.source" class="mapping-row"><code>{{ item.source }}</code><span>{{ item.sample }}</span><select v-model="item.target"><option v-for="option in item.options" :key="option.value" :value="option.value">{{ option.label }}</option></select></div>
 
-      <section class="review-evidence"><h3>来源与证据</h3><div><article><span>原始数据</span><strong>{{ record.sourceTable }} / {{ record.sourceRecordId }}</strong><p>科技要素数据库的原始记录与任务快照</p></article><article><span>规则与 Schema</span><strong>{{ record.ruleId }}</strong><p>tech-kg-schema-v1.8 · {{ record.node }}校验结果</p></article><article><span>处理引擎</span><strong>{{ record.module === '图谱构建' ? 'Qwen3-32B-Instruct' : 'Data Pipeline Engine 3.1' }}</strong><p>原始输出、置信度和运行日志均保留在任务实例中</p></article></div></section>
+          <label class="wide"><span>审核备注（可选）</span><textarea v-model="note" placeholder="记录依据或补充说明" /></label>
+        </div>
 
-      <section class="review-history"><h3>操作记录</h3><ol><li v-for="item in timeline" :key="`${item.time}-${item.title}`"><i></i><div><strong>{{ item.title }}</strong><p>{{ item.detail }}</p></div><time>{{ item.time }}</time></li></ol></section>
+        <div v-else class="review-readonly-result"><strong>{{ record.decision }}</strong><p>{{ record.decisionNote }}</p><em>{{ record.completedAt }}</em></div>
+      </section>
+
       <p v-if="feedback" class="review-feedback">{{ feedback }}</p>
     </main>
 
-    <footer class="review-task-footer"><span>{{ isHistory ? '该任务已完成，当前为只读历史记录。' : isInProgress ? `当前任务由 ${record.handler} 处理并锁定，可查看进度但不能修改。` : '所有决策和修改都会写入操作记录，可在溯源与任务中心查看。' }}</span><div v-if="isEditable"><button type="button" @click="handleReview('驳回上游')">驳回上游</button><button class="primary" type="button" @click="handleReview('提交')">提交并重新校验</button></div></footer>
+    <footer class="review-task-footer"><span>{{ isHistory ? '处理已完成' : '选定内容均来自当前 Schema v1.8' }}</span><div v-if="isEditable"><button type="button" @click="handleReview('驳回上游')">驳回上游</button><button class="primary" type="button" @click="handleReview(primaryAction)">{{ primaryAction }}</button></div></footer>
   </div>
-  <div v-else class="review-not-found"><h1>未找到人工处理实例</h1><RouterLink to="/manual-review">返回人工处理</RouterLink></div>
+  <div v-else class="review-not-found"><h1>该处理实例未配置详情页</h1><RouterLink to="/manual-review">返回人工审核</RouterLink></div>
 </template>
 
 <style scoped>
@@ -81,4 +123,11 @@ const handleReview = (action: '驳回上游' | '忽略异常' | '提交') => {
 .instance-link{display:inline-block;margin-top:6px;color:#165dff;font-size:10px;text-decoration:none}
 .review-task-detail{overflow:hidden}.review-object-card{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;margin-bottom:10px;padding:14px 18px;border:1px solid #bdd7ff;border-radius:8px;background:linear-gradient(135deg,#fff,#f3f8ff)}.review-object-card span{color:#718098;font-size:10px}.review-object-card h2{margin:5px 0 3px;font-size:19px}.review-object-card p{margin:0;color:#6d7c93;font-size:11px}.review-object-card em{padding:4px 10px;border-radius:99px;background:#fff0e8;color:#c4320a;font-size:11px;font-style:normal}.review-meta-grid{display:grid;flex:0 0 auto;grid-template-columns:.7fr 1.2fr 1.5fr .7fr .55fr;margin-bottom:10px;overflow:hidden;border:1px solid #c5daf7;border-radius:8px;background:#fff}.review-meta-grid article{display:grid;gap:5px;padding:11px 14px;border-right:1px solid #e1eaf5}.review-meta-grid article:last-child{border-right:0}.review-meta-grid span{color:#78869b;font-size:9px}.review-meta-grid strong{color:#344861;font-size:10px;line-height:16px}.review-task-body{flex:1;min-height:0;overflow:auto;padding:14px;border:1px solid #bdd7ff;border-radius:8px;background:rgba(255,255,255,.95)}.review-task-body>section,.review-task-body .review-compare article{padding:14px;border:1px solid #dce8f8;border-radius:7px;background:#fbfdff}.review-task-body h3{margin:0 0 8px;font-size:14px}.decision-result p,.review-task-body .review-compare p,.review-task-body .review-evidence p{margin:0;color:#61708a;font-size:11px;line-height:19px}.decision-options{margin-bottom:10px}.decision-options>div{display:flex;gap:8px}.decision-options label{padding:8px 12px;border:1px solid #d4dfed;border-radius:6px;background:#fff;color:#52647f;font-size:11px;cursor:pointer}.decision-options label.active{border-color:#165dff;background:#eef5ff;color:#165dff}.decision-options input{margin-right:6px}.decision-options p{margin:9px 0 0;color:#718098;font-size:10px}.review-history{margin-top:10px}.review-history ol{margin:0;padding:0;list-style:none}.review-history li{display:grid;grid-template-columns:12px minmax(0,1fr) 150px;gap:10px;padding:9px 0;border-bottom:1px solid #e8eef6}.review-history li:last-child{border-bottom:0}.review-history i{width:8px;height:8px;margin-top:4px;border-radius:50%;background:#165dff;box-shadow:0 0 0 3px #eaf2ff}.review-history strong{font-size:11px}.review-history p{margin:3px 0 0;color:#718098;font-size:10px}.review-history time{color:#8290a7;font-size:10px;text-align:right}.review-task-footer{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;margin-top:10px;padding:11px 14px;border:1px solid #dce8f8;border-radius:7px;background:#fff}.review-task-footer>span{color:#718098;font-size:10px}.review-task-footer>div{display:flex;gap:8px}.review-task-footer button{height:32px;padding:0 12px;border:1px solid #bdd0ea;border-radius:5px;background:#fff;color:#40516d;cursor:pointer}.review-task-footer button.primary{border-color:#165dff;background:#165dff;color:#fff}@media(max-width:1000px){.review-meta-grid{grid-template-columns:repeat(2,1fr)}.review-meta-grid article{border-bottom:1px solid #e1eaf5}.decision-options>div{flex-wrap:wrap}}
 .review-progress-panel{flex:0 0 auto;margin-bottom:10px;overflow:hidden;border:1px solid #b8d2f5;border-radius:8px;background:#fff}.review-progress-panel>header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #dce8f8;background:#f4f8ff}.review-progress-panel h2{margin:0;font-size:14px}.review-progress-panel header p{margin:3px 0 0;color:#718098;font-size:10px}.review-progress-panel header>span{padding:3px 9px;border-radius:99px;background:#eaf2ff;color:#175cd3;font-size:10px}.review-progress-panel>div{display:grid;grid-template-columns:.8fr .9fr 1.4fr 1.1fr 1fr}.review-progress-panel article{display:grid;gap:5px;padding:10px 13px;border-right:1px solid #e1eaf5}.review-progress-panel article:last-child{border-right:0}.review-progress-panel article span{color:#78869b;font-size:9px}.review-progress-panel article strong{color:#344861;font-size:10px;line-height:16px}@media(max-width:1000px){.review-progress-panel>div{grid-template-columns:repeat(2,1fr)}}
+.review-meta-grid{grid-template-columns:.65fr 1.1fr 1.35fr .65fr 1.35fr}
+.severity-badge.is-P0{background:#fee4e2;color:#d92d20}.severity-badge.is-P1{background:#fff3d8;color:#b54708}.severity-badge.is-P2{background:#eaf2ff;color:#175cd3}
+.issue-summary{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,.6fr);gap:10px;margin-bottom:10px}.issue-summary>div{padding:12px 14px;border:1px solid #f0c7c3;border-radius:7px;background:#fff9f8}.issue-summary>div:last-child{border-color:#dce8f8;background:#fbfdff}.issue-summary span{display:block;margin-bottom:5px;color:#78869b;font-size:9px}.issue-summary strong{font-size:12px}.issue-summary p{margin:4px 0 0;color:#61708a;font-size:10px;line-height:17px}.review-editor{margin-bottom:10px;overflow:hidden}.review-editor>header{display:flex;align-items:flex-start;justify-content:space-between;margin:-14px -14px 14px;padding:12px 14px;border-bottom:1px solid #dce8f8;background:#f5f9ff}.review-editor h3{margin:0}.review-editor header p{margin:4px 0 0;color:#718098;font-size:10px}.review-editor header em{padding:3px 8px;border-radius:99px;background:#eaf2ff;color:#175cd3;font-size:9px;font-style:normal}.review-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.review-form label{display:grid;gap:6px}.review-form label.wide{grid-column:1/-1}.review-form label>span{color:#596a83;font-size:10px}.review-form input,.review-form select,.review-form textarea{box-sizing:border-box;width:100%;min-width:0;padding:8px 9px;border:1px solid #bdd0ea;border-radius:5px;background:#fff;color:#263650;font:11px/17px inherit}.review-form input,.review-form select{height:34px}.review-form input:disabled{background:#f3f6fa;color:#718098}.review-form textarea{min-height:62px;resize:vertical}.review-readonly-result{display:grid;gap:5px}.review-readonly-result strong{font-size:12px}.review-readonly-result p{margin:0;color:#61708a;font-size:10px}.review-readonly-result em{color:#8290a7;font-size:9px;font-style:normal}.review-secondary{margin-top:10px;border:1px solid #dce8f8;border-radius:7px;background:#fff}.review-secondary summary{padding:11px 13px;color:#40516d;font-size:11px;font-weight:600;cursor:pointer}.review-secondary[open] summary{border-bottom:1px solid #e5edf8}.review-secondary>.review-evidence,.review-secondary>.review-history{padding:12px}.review-secondary .review-evidence{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.review-secondary .review-evidence article{padding:10px;border:1px solid #e1e9f4;border-radius:6px;background:#fbfdff}.review-secondary .review-evidence span{display:block;margin-bottom:6px;color:#718098;font-size:9px}.review-secondary .review-evidence strong{font-size:10px;line-height:17px}.review-secondary .review-evidence p{margin:3px 0 0;color:#718098;font-size:9px}@media(max-width:900px){.issue-summary,.review-form{grid-template-columns:1fr}.review-form label.wide{grid-column:auto}.review-secondary .review-evidence{grid-template-columns:1fr}}
+/* 人工审核仅保留：异常位置、修改内容和处理方式 */
+.review-workspace__head{align-items:center}.review-workspace__head-actions{display:none}.review-task-body{padding:0 18px 18px;border-color:#dce8f8;background:#fff}.review-task-body>section{padding:20px 0;border:0;border-bottom:1px solid #e6edf6;border-radius:0;background:transparent}.review-task-body>section:last-of-type{border-bottom:0}.issue-summary{display:block;margin:0}.issue-summary>header,.review-editor>header{display:flex;align-items:center;justify-content:flex-start;gap:11px;margin:0 0 16px;padding:0;border:0;background:transparent}.issue-summary>header>span,.review-editor>header>span{display:grid;flex:0 0 26px;height:26px;margin:0;place-items:center;border-radius:50%;background:#165dff;color:#fff;font-size:12px;font-weight:700}.issue-summary h2,.review-editor h2{margin:0;color:#17233b;font-size:15px}.issue-summary header p,.review-editor header p{margin:3px 0 0;color:#718098;font-size:11px}.issue-summary>.issue-location{display:flex;align-items:baseline;gap:12px;padding:0;border:0;background:transparent}.issue-location strong{font-size:14px}.issue-location span{margin:0;color:#718098;font-size:10px}.issue-summary>.issue-reason{margin:12px 0 0;padding:11px 13px;border-left:3px solid #f04438;border-radius:4px;background:#fff6f5;color:#344054;font-size:12px;line-height:20px}.issue-summary>.issue-current{margin:8px 0 0;color:#667085;font-size:11px}.review-editor{margin:0;overflow:visible}.review-form{max-width:980px}.review-form input:disabled{border-color:#e1e7ef;background:#f5f7fa;color:#475467}.schema-current input{border-color:#f4c7c3!important;background:#fff7f6!important;color:#b42318!important}.schema-correct select{border-color:#84adff;background:#f5f8ff}.schema-change-preview{display:flex;grid-column:1/-1;align-items:center;gap:18px;padding:12px 14px;border:1px solid #b8d2f5;border-radius:6px;background:#f6faff}.schema-change-preview>span{color:#667085;font-size:10px}.schema-change-preview strong{font-size:12px}.schema-change-preview b{margin:0 8px;color:#165dff}.review-readonly-result{padding-left:37px}.review-feedback{margin:16px 0 0}.review-task-footer{border-color:#dce8f8;box-shadow:0 -4px 12px rgba(26,57,104,.04)}.review-task-footer button.danger-action{border-color:#f1b8b3;color:#b42318}
+.mapping-head,.mapping-row{display:grid;grid-column:1/-1;grid-template-columns:180px minmax(220px,1fr) minmax(260px,1fr);align-items:center;gap:12px}.mapping-head{padding:0 10px;color:#667085;font-size:10px}.mapping-row{padding:10px;border:1px solid #e1e8f2;border-radius:6px;background:#fbfcfe}.mapping-row code{color:#175cd3;font-size:11px}.mapping-row>span{overflow:hidden;color:#475467;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.mapping-row select{height:34px;padding:0 9px;border:1px solid #bdd0ea;border-radius:5px;background:#fff;color:#263650}
+@media(max-width:900px){.issue-summary>.issue-location{align-items:flex-start;flex-direction:column;gap:4px}.decision-options>div{padding-left:0}.mapping-head{display:none}.mapping-row{grid-template-columns:1fr}}
 </style>

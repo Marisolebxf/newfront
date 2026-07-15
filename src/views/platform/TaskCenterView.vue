@@ -8,7 +8,7 @@ const route = useRoute()
 const router = useRouter()
 const initialModule = ['数据处理', '图谱构建', '图谱版本'].includes(String(route.query.module)) ? String(route.query.module) : '数据处理'
 const moduleFilter = ref(initialModule)
-const statusFilter = ref(String(route.query.status || '全部状态'))
+const statusFilter = ref(String(route.query.status || '全部执行状态'))
 const batchFilter = ref(String(route.query.batch || '全部更新批次'))
 const scopeFilter = ref(initialModule === '数据处理' ? '全部数据域' : '全部图谱对象')
 const keyword = ref('')
@@ -39,6 +39,8 @@ const changeRows = [
 ]
 
 const activeStage = computed<'数据处理' | '图谱构建'>(() => moduleFilter.value === '图谱构建' ? '图谱构建' : '数据处理')
+const processFailureTypes = ['模型批量输出异常', 'Schema 批量映射失败', '公共字典配置异常']
+const taskFailureTypes = ['单任务执行失败']
 const getDataDomain = (item: { objectType: string; sourceTable: string }) => {
   const text = `${item.objectType} ${item.sourceTable}`
   if (text.includes('论文')) return '论文域'
@@ -49,27 +51,38 @@ const getDataDomain = (item: { objectType: string; sourceTable: string }) => {
 }
 const taskRows = computed(() => processingInstances.filter((item) => item.stage === activeStage.value).map((item) => {
   const batch = getUpdateBatch(item.batchId)
+  const confidence = Number(item.confidence)
+  const isProcessFailure = processFailureTypes.includes(item.reviewType ?? '')
+  const isTaskFailure = taskFailureTypes.includes(item.reviewType ?? '')
+  const executionInterrupted = isProcessFailure || isTaskFailure
   return {
     ...item,
     batchName: batch?.name ?? item.batchId,
     dataWindow: batch?.dataWindow ?? '-',
     updateDate: batch?.updateDate ?? '-',
     dataDomain: getDataDomain(item),
-    currentStep: item.status === '已完成' || item.status === '人工处理完成'
-      ? (item.stage === '图谱构建' ? '图谱入库' : '标准数据写入')
-      : item.stage === '图谱构建' ? '规则与证据校验' : '质量检验',
+    executionStatus: executionInterrupted ? '执行中断' : '执行成功',
+    executionHint: isProcessFailure ? '公共流程已阻断' : isTaskFailure ? '当前任务未完成' : '程序正常结束',
+    confidenceDisplay: executionInterrupted || item.stage === '数据处理' || !item.confidence ? '—' : item.confidence,
+    confidenceHint: executionInterrupted ? '未产生结果' : item.stage === '数据处理' ? '确定性规则，不适用' : confidence < 0.9 ? '低于自动通过阈值' : '达到阈值',
+    currentStep: item.reviewType === '公共字典配置异常' ? '清洗标准化' : item.reviewType === 'Schema 批量映射失败' ? 'Schema 映射' : item.reviewType === '模型批量输出异常' ? '大模型抽取' : item.stage === '数据处理' ? '质量检验' : ['实体冲突', '单任务执行失败'].includes(item.reviewType ?? '') ? '实体对齐消歧' : '大模型抽取与校验',
   }
 }))
 
-const summary = [
-  { label: '今日更新批次', value: '1', hint: '25,140 条源数据变化' },
-  { label: '已完成实例', value: '43,335', hint: '实体与关系均可查看详情' },
-  { label: '待人工处理', value: '711', hint: '归属今日更新批次' },
-  { label: '最近完成', value: '07-13', hint: '上一数据更新批次' },
-]
+const summary = computed(() => {
+  const today = processingInstances.filter((item) => item.batchId === 'UPD-20260714')
+  const interrupted = today.filter((item) => [...processFailureTypes, ...taskFailureTypes].includes(item.reviewType ?? ''))
+  const pendingResult = today.filter((item) => !interrupted.includes(item) && item.status === '待人工处理')
+  return [
+    { label: '今日具体任务', value: String(today.length), hint: `数据处理 ${today.filter(item => item.stage === '数据处理').length} · 图谱构建 ${today.filter(item => item.stage === '图谱构建').length}` },
+    { label: '执行成功', value: String(today.length - interrupted.length), hint: '已运行完成，模型结果才可能有置信度' },
+    { label: '执行中断', value: String(interrupted.length), hint: '未产生结果，因此无置信度' },
+    { label: '结果待确认', value: String(pendingResult.length), hint: '已执行完成，但结果需人工确认' },
+  ]
+})
 
 const filteredRows = computed(() => taskRows.value.filter((row) => (
-  (statusFilter.value === '全部状态' || row.status === statusFilter.value)
+  (statusFilter.value === '全部执行状态' || row.executionStatus === statusFilter.value)
   && (batchFilter.value === '全部更新批次' || row.batchId === batchFilter.value)
   && (activeStage.value === '数据处理'
     ? (scopeFilter.value === '全部数据域' || row.dataDomain === scopeFilter.value)
@@ -105,7 +118,7 @@ function runImmediateUpdate() {
   updateNotice.value = '已提交立即更新：正在检测数据库变化，检测完成后将创建新的数据更新批次和具体处理实例。'
 }
 
-watch(() => route.query.status, (value) => { statusFilter.value = String(value || '全部状态') })
+watch(() => route.query.status, (value) => { statusFilter.value = String(value || '全部执行状态') })
 watch(() => route.query.batch, (value) => { batchFilter.value = String(value || '全部更新批次') })
 watch(() => route.query.module, (value) => {
   moduleFilter.value = ['数据处理', '图谱构建', '图谱版本'].includes(String(value)) ? String(value) : '数据处理'
@@ -115,13 +128,13 @@ watch(() => route.query.module, (value) => {
 
 <template>
   <div class="task-center">
-    <header><div><h1>任务中心</h1><p>按科技要素数据库更新时间水位形成每日数据更新批次；每条源数据及其图谱构建结果都有可追踪的处理实例。</p></div></header>
+    <header><div><h1>任务中心</h1></div></header>
     <section class="auto-update-monitor" aria-label="图谱自动更新策略与最近变化">
       <header><div class="monitor-statuses"><span><i></i><strong>数据库连接正常</strong></span></div><em>最近健康检查 10:42 · 最近更新完成 02:18</em></header>
       <div class="auto-update-body">
         <article class="latest-change"><span>最近一次检测 · 共 25,140 条源数据变化</span><strong>新增 18,420　修改 6,408　删除 312</strong><p><b>新增论文 12,846</b><b>新增专家 2,418</b><b>新增专利 / 项目 3,156</b></p><button type="button" @click="changeDrawerOpen=true">查看具体变更数据 →</button></article>
         <article class="update-schedule"><span>自动更新策略</span><strong>{{ scheduleFrequency }} {{ scheduleTime }} 检测并更新</strong><p>下一次：2026-07-15 {{ scheduleTime }} · 无变化则不创建更新批次</p></article>
-        <div v-if="canManageUpdates" class="update-actions"><button type="button" @click="scheduleDialogOpen=true">设置更新时间</button><button class="primary" type="button" @click="runImmediateUpdate">立即检测并更新</button><small>需“图谱更新管理”权限</small></div>
+        <div v-if="canManageUpdates" class="update-actions"><button type="button" @click="scheduleDialogOpen=true">更新策略</button><button type="button" @click="runImmediateUpdate">紧急更新</button><small>需图谱更新权限</small></div>
       </div>
     </section>
     <p v-if="updateNotice" class="update-feedback">{{ updateNotice }}</p>
@@ -130,8 +143,8 @@ watch(() => route.query.module, (value) => {
       <button v-for="item in taskCategories" :key="item.value" type="button" :class="{ active: moduleFilter === item.value }" @click="selectCategory(item.value)">{{ item.label }}<em>{{ item.count }}</em></button>
     </nav>
     <section v-if="moduleFilter !== '图谱版本'" class="task-panel">
-      <div class="task-filter"><input v-model="keyword" placeholder="搜索实例 ID、处理对象、来源表或批次" /><select v-model="batchFilter"><option>全部更新批次</option><option v-for="batch in updateBatches" :key="batch.id" :value="batch.id">{{ batch.name }}</option></select><select v-if="activeStage === '数据处理'" v-model="scopeFilter"><option>全部数据域</option><option>论文域</option><option>人才域</option><option>机构域</option><option>企业域</option><option>综合数据域</option></select><select v-else v-model="scopeFilter"><option>全部图谱对象</option><option>实体</option><option>关系</option><option>属性</option></select><select v-model="statusFilter"><option>全部状态</option><option>已完成</option><option>待人工处理</option><option>人工处理中</option><option>人工处理完成</option></select><span>{{ filteredRows.length }} 个处理实例</span></div>
-      <div class="task-table"><table><thead><tr><th>处理实例 ID</th><th>处理对象</th><th>{{ activeStage === '数据处理' ? '数据域 / 处理动作' : '图谱对象 / 处理动作' }}</th><th>所属更新批次</th><th>数据更新时间范围</th><th>来源表</th><th>当前处理节点</th><th>状态</th><th>处理时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredRows" :key="row.id" tabindex="0" @click="openTask(row)" @keydown.enter="openTask(row)"><td><code>{{ row.id }}</code></td><td><strong>{{ row.objectName }}</strong><small>{{ row.objectId }}</small></td><td>{{ activeStage === '数据处理' ? row.dataDomain : `${row.kind} · ${row.objectType}` }}<small>{{ row.action }}</small></td><td><strong>{{ row.batchName }}</strong><small>{{ row.batchId }}</small></td><td>{{ row.dataWindow }}</td><td>{{ row.sourceTable }}<small>{{ row.sourceRecordId }}</small></td><td>{{ row.currentStep }}</td><td><span :class="['status', `is-${row.status}`]">{{ row.status }}</span></td><td>{{ row.processedAt }}</td><td><button type="button" @click.stop="openTask(row)">查看详情 →</button></td></tr><tr v-if="!filteredRows.length"><td class="empty-row" colspan="10">暂无符合条件的处理实例</td></tr></tbody></table></div>
+      <div class="task-filter"><input v-model="keyword" placeholder="搜索任务 ID、处理对象、来源表或规则" /><select v-model="batchFilter"><option>全部更新批次</option><option v-for="item in updateBatches" :key="item.id" :value="item.id">{{ item.name }}</option></select><select v-if="activeStage === '数据处理'" v-model="scopeFilter"><option>全部数据域</option><option>论文域</option><option>人才域</option><option>机构域</option><option>企业域</option><option>综合数据域</option></select><select v-else v-model="scopeFilter"><option>全部图谱对象</option><option>实体</option><option>关系</option><option>属性</option></select><select v-model="statusFilter"><option>全部执行状态</option><option>执行成功</option><option>执行中断</option></select><span>{{ filteredRows.length }} 个具体任务</span></div>
+      <div class="task-table"><table><thead><tr><th>任务 ID</th><th>处理对象</th><th>{{ activeStage === '数据处理' ? '数据域 / 处理动作' : '图谱对象 / 处理动作' }}</th><th>当前节点</th><th>执行状态</th><th>模型结果置信度</th><th>处理时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredRows" :key="row.id" tabindex="0" @click="openTask(row)" @keydown.enter="openTask(row)"><td><code>{{ row.id }}</code><small>{{ row.batchId }}</small></td><td><strong>{{ row.objectName }}</strong><small>{{ row.objectId }}</small></td><td>{{ activeStage === '数据处理' ? row.dataDomain : `${row.kind} · ${row.objectType}` }}<small>{{ row.action }} · {{ row.sourceTable }}</small></td><td>{{ row.currentStep }}</td><td><span :class="row.executionStatus === '执行成功' ? 'execution-success' : 'execution-interrupted'">{{ row.executionStatus }}</span><small>{{ row.executionHint }}</small></td><td><strong :class="{ 'danger-text': row.confidenceDisplay !== '—' && Number(row.confidence) < 0.9 }">{{ row.confidenceDisplay }}</strong><small>{{ row.confidenceHint }}</small></td><td>{{ row.processedAt }}</td><td><button type="button" @click.stop="openTask(row)">查看结果与日志 →</button></td></tr><tr v-if="!filteredRows.length"><td class="empty-row" colspan="8">暂无符合条件的具体任务</td></tr></tbody></table></div>
     </section>
     <GraphVersionView v-else embedded />
 
@@ -141,14 +154,14 @@ watch(() => route.query.module, (value) => {
       <section class="change-summary"><article><span>新增</span><strong>18,420</strong></article><article><span>修改</span><strong>6,408</strong></article><article><span>删除</span><strong>312</strong></article></section>
       <nav><button class="active" type="button">全部变更</button><button type="button">论文</button><button type="button">专家</button><button type="button">专利 / 项目</button></nav>
       <div class="change-table"><table><thead><tr><th>变更</th><th>数据类型</th><th>对象标识</th><th>具体数据</th><th>识别时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in changeRows" :key="row.id" tabindex="0" @click="selectedChange=row" @keydown.enter="selectedChange=row"><td><em :class="row.change === '新增' ? 'is-add' : row.change === '修改' ? 'is-update' : 'is-delete'">{{ row.change }}</em></td><td>{{ row.type }}</td><td>{{ row.id }}</td><td>{{ row.content }}</td><td>{{ row.time }}</td><td><button type="button">查看详情 →</button></td></tr></tbody></table></div>
-      <footer><span>展示4条示例 · 共25,140条变更</span><RouterLink to="/tasks?module=数据处理&amp;batch=UPD-20260714">查看对应处理实例 →</RouterLink></footer>
+      <footer><span>共 25,140 条变更</span><RouterLink to="/task-detail/batch/UPD-20260714">查看完整更新任务 →</RouterLink></footer>
     </aside>
 
     <aside v-if="selectedChange" class="change-record-detail">
       <header><button type="button" @click="selectedChange=null">← 返回变更列表</button><button type="button" aria-label="关闭详情" @click="selectedChange=null">×</button></header>
       <div><span>{{ selectedChange.change }} · {{ selectedChange.type }}</span><h2>{{ selectedChange.content }}</h2><p>对象标识：{{ selectedChange.id }}</p></div>
       <dl><div><dt>来源数据表</dt><dd>{{ selectedChange.source }}</dd></div><div><dt>识别时间</dt><dd>2026-07-14 {{ selectedChange.time }}</dd></div><div><dt>变更字段</dt><dd>{{ selectedChange.field }}</dd></div><div><dt>变更前</dt><dd>{{ selectedChange.before }}</dd></div><div><dt>变更后</dt><dd>{{ selectedChange.after }}</dd></div><div><dt>后续处理</dt><dd>{{ selectedChange.result }}</dd></div></dl>
-      <footer><RouterLink to="/tasks?module=数据处理&amp;batch=UPD-20260714">查看对应处理实例 →</RouterLink></footer>
+      <footer><RouterLink to="/task-detail/batch/UPD-20260714">查看完整更新任务 →</RouterLink></footer>
     </aside>
 
     <button v-if="scheduleDialogOpen" class="task-update-mask" type="button" aria-label="关闭更新时间设置" @click="scheduleDialogOpen=false" />
@@ -173,5 +186,8 @@ watch(() => route.query.module, (value) => {
 .auto-update-monitor>.auto-update-body{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(260px,.8fr) auto;align-items:stretch}.auto-update-body article{display:grid;align-content:center;gap:4px;padding:10px 14px;border-right:1px solid #e1ebe5}.auto-update-body article>span{color:#74867b;font-size:9px}.auto-update-body article>strong{color:#2f493a;font-size:13px}.auto-update-body article p{display:flex;gap:6px;margin:1px 0 0;color:#708177;font-size:9px}.latest-change p b{padding:2px 6px;border-radius:999px;background:#eef5ff;color:#315b95;font-weight:500}.latest-change button{width:max-content;padding:0;border:0;background:transparent;color:#165dff;font-size:9px;cursor:pointer}.update-actions{display:grid;grid-template-columns:auto auto;align-content:center;gap:6px;padding:10px 14px}.update-actions button{height:31px;padding:0 10px;border:1px solid #bdd0ea;border-radius:5px;background:#fff;color:#40516d;font-size:10px;cursor:pointer}.update-actions button.primary{border-color:#165dff;background:#165dff;color:#fff}.update-actions small{grid-column:1/-1;color:#819087;font-size:8px;text-align:right}.change-drawer{position:fixed;z-index:50;top:0;right:0;display:flex;width:min(760px,92vw);height:100vh;background:#f8fbff;box-shadow:-18px 0 46px rgba(28,58,107,.25);flex-direction:column}.change-drawer>header,.schedule-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;padding:18px;border-bottom:1px solid #dce8f8;background:#fff}.change-drawer header span,.schedule-dialog header span{color:#165dff;font-size:10px}.change-drawer h2,.schedule-dialog h2{margin:4px 0;font-size:18px}.change-drawer header p{margin:0;color:#71809a;font-size:10px}.change-drawer header button,.schedule-dialog header button{width:29px;height:29px;border:0;border-radius:5px;background:#f0f4fa;font-size:19px;cursor:pointer}.change-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;padding:13px}.change-summary article{display:grid;gap:4px;padding:11px;border:1px solid #d6e3f4;border-radius:6px;background:#fff}.change-summary span{color:#71809a;font-size:9px}.change-summary strong{font-size:19px}.change-drawer>nav{display:flex;padding:0 13px;border-bottom:1px solid #dce8f8;background:#fff}.change-drawer>nav button{padding:10px;border:0;border-bottom:2px solid transparent;background:transparent;color:#61708a;font-size:10px;cursor:pointer}.change-drawer>nav button.active{border-color:#165dff;color:#165dff}.change-table{flex:1;min-height:0;overflow:auto;padding:13px}.change-table table{width:100%;border-collapse:collapse;background:#fff;font-size:10px}.change-table th,.change-table td{padding:10px;border-bottom:1px solid #e4ecf6;text-align:left}.change-table th{position:sticky;top:0;background:#f1f6fc;color:#5a6c88}.change-table em{display:inline-flex;padding:2px 6px;border-radius:999px;font-style:normal}.change-table .is-add{background:#e9f8ef;color:#067647}.change-table .is-update{background:#eaf2ff;color:#175cd3}.change-table .is-delete{background:#fee4e2;color:#b42318}.change-drawer>footer{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid #dce8f8;background:#fff}.change-drawer footer span{color:#71809a;font-size:9px}.change-drawer footer a{color:#165dff;font-size:10px;text-decoration:none}.schedule-dialog{position:fixed;z-index:50;top:50%;left:50%;width:min(560px,calc(100vw - 40px));overflow:hidden;border-radius:10px;background:#f8fbff;box-shadow:0 24px 70px rgba(28,58,107,.3);transform:translate(-50%,-50%)}.schedule-dialog>div{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:17px}.schedule-dialog label{display:grid;gap:5px}.schedule-dialog label span{color:#60708a;font-size:10px}.schedule-dialog select,.schedule-dialog input{height:34px;padding:0 9px;border:1px solid #bdd0ea;border-radius:5px;background:#fff;color:#344766}.schedule-dialog section{grid-column:1/-1;padding:11px;border:1px solid #d6e3f4;border-radius:6px;background:#fff}.schedule-dialog section strong{font-size:11px}.schedule-dialog section p{margin:4px 0 0;color:#687892;font-size:10px;line-height:17px}.schedule-dialog .permission-note{border-color:#f3d29c;background:#fffaeb}.schedule-dialog>footer{display:flex;justify-content:flex-end;gap:7px;padding:12px 17px;border-top:1px solid #dce8f8;background:#fff}.schedule-dialog>footer button{height:33px;padding:0 13px;border:1px solid #bdd0ea;border-radius:5px;background:#fff;color:#40516d;cursor:pointer}.schedule-dialog>footer .primary{border-color:#165dff;background:#165dff;color:#fff}@media(max-width:1200px){.auto-update-monitor>.auto-update-body{grid-template-columns:1fr 1fr}.update-actions{grid-column:1/-1;grid-template-columns:1fr 1fr}.update-actions small{text-align:left}}
 .monitor-statuses{display:flex;align-items:center;gap:12px}.monitor-statuses>span{display:flex;align-items:center;gap:7px}.monitor-statuses>b{color:#668071;font-size:9px;font-weight:400}.auto-update-monitor .monitor-statuses i{display:block;flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:#12b76a;box-shadow:0 0 0 3px rgba(18,183,106,.12)}
 .change-table tbody tr{cursor:pointer}.change-table tbody tr:hover td{background:#f4f8ff}.change-table td button{border:0;background:transparent;color:#165dff;font-size:9px;cursor:pointer;white-space:nowrap}.change-record-detail{position:fixed;z-index:51;top:0;right:0;display:flex;width:min(520px,88vw);height:100vh;background:#f8fbff;box-shadow:-16px 0 42px rgba(28,58,107,.28);flex-direction:column}.change-record-detail>header{display:flex;align-items:center;justify-content:space-between;padding:14px 17px;border-bottom:1px solid #dce8f8;background:#fff}.change-record-detail header button{border:0;background:transparent;color:#165dff;font-size:11px;cursor:pointer}.change-record-detail header button:last-child{display:grid;place-items:center;width:29px;height:29px;border-radius:5px;background:#f0f4fa;color:#344766;font-size:18px}.change-record-detail>div{padding:18px;border-bottom:1px solid #dce8f8;background:#fff}.change-record-detail>div span{color:#165dff;font-size:10px}.change-record-detail h2{margin:6px 0;font-size:18px;line-height:27px}.change-record-detail>div p{margin:0;color:#71809a;font-size:10px}.change-record-detail dl{flex:1;margin:0;padding:15px;overflow:auto}.change-record-detail dl>div{display:grid;grid-template-columns:100px minmax(0,1fr);gap:12px;padding:13px;border-bottom:1px solid #e2eaf5;background:#fff}.change-record-detail dt{color:#71809a;font-size:10px}.change-record-detail dd{margin:0;color:#344766;font-size:11px;line-height:18px}.change-record-detail>footer{padding:14px 17px;border-top:1px solid #dce8f8;background:#fff;text-align:right}.change-record-detail footer a{color:#165dff;font-size:11px;text-decoration:none}
-.task-filter{grid-template-columns:minmax(260px,1fr) 190px 120px 150px auto}.task-table code{color:#175cd3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.empty-row{height:90px!important;color:#8290a7;text-align:center!important}.status.is-已完成,.status.is-人工处理完成{background:#dcfae6;color:#067647}.status.is-待人工处理{background:#fff3d8;color:#b54708}.status.is-人工处理中{background:#eaf2ff;color:#175cd3}
+.task-filter{grid-template-columns:minmax(260px,1fr) 190px 120px 150px auto}.task-table code{color:#175cd3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.empty-row{height:90px!important;color:#8290a7;text-align:center!important}.status.is-已完成,.status.is-人工处理完成{background:#dcfae6;color:#067647}.status.is-待人工处理{background:#fff3d8;color:#b54708}
+.task-filter--batch{grid-template-columns:minmax(320px,1fr) 170px 150px auto}.stage-state{display:inline-flex;padding:2px 7px;border-radius:999px;background:#eaf2ff;color:#175cd3;font-size:10px}.stage-state.is-已完成{background:#dcfae6;color:#067647}.stage-state.is-待审核{background:#fff3d8;color:#b54708}.status.is-待审核{background:#fee4e2;color:#b42318}.status.is-处理中{background:#eaf2ff;color:#175cd3}.danger-text{color:#b42318}.task-table td small code{font-size:9px}
+.stage-state.is-已阻断{background:#fee4e2;color:#b42318}
+.execution-success,.execution-interrupted{display:inline-flex;padding:2px 7px;border-radius:999px;font-size:10px}.execution-success{background:#dcfae6;color:#067647}.execution-interrupted{background:#fee4e2;color:#b42318}.task-table td{vertical-align:middle}
 </style>

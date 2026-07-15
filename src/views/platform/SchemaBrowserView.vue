@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-type Entity = { name: string; label: string; level: '首版必落' | '支撑实体'; key: string; source: string; description: string }
+type Entity = { name: string; label: string; level: '核心实体' | '支撑实体'; key: string; source: string; description: string }
 type Relation = { name: string; label: string; source: string; target: string; basis: string; level?: '标准' | '扩展' }
 
 const activeTab = ref('标准实体')
@@ -10,20 +10,20 @@ const schemaVersionMessage = ref('')
 const tabs = ['标准实体', '事实关系', '推理关系', '属性定义', '候选层', '实体对齐', '版本记录']
 
 const entities: Entity[] = [
-  { name: 'Expert', label: '专家 / 人才 / 学者', level: '首版必落', key: 'scholar_id / expert_id', source: '专家表组、论文作者、项目人员、专利发明人', description: '统一承载科研与产业人才主体' },
-  { name: 'Organization', label: '机构 / 企业', level: '首版必落', key: 'org_id / external_id / credit_code', source: '机构表组、论文单位、项目机构、专利申请人', description: '高校、科研机构、企业、医院和政府机构统一建模，用 org_category 区分' },
-  { name: 'Paper', label: '论文', level: '首版必落', key: 'DOI / paper_id', source: '中英文论文详情、引用、参考文献表', description: '论文成果与引用信息' },
-  { name: 'Project', label: '项目', level: '首版必落', key: 'id / project_number', source: '国内外项目主表与项目产出表', description: '科研项目、资助、参与人员与项目成果' },
-  { name: 'Patent', label: '专利', level: '首版必落', key: 'patent_id / publication_number / application_number', source: '专利主表、标题、摘要、发明人、申请人表', description: '专利成果、法律状态、权利人与技术分类' },
-  { name: 'Report', label: '报告', level: '首版必落', key: 'report_id', source: '中外文报告、报告作者、机构和关键词表', description: '科技报告及其作者、机构、论文和项目关联' },
-  { name: 'Policy', label: '政策', level: '首版必落', key: 'id / recordId / URL', source: '国内政策、国外政策、政策要素与发布部门表', description: '政策文本、发布部门、领域与产业链节点' },
-  { name: 'Event', label: '事件 / 资讯', level: '首版必落', key: 'news_id / URL / 生成 ID', source: '企业资讯、产业链资讯、融资、并购与招投标数据', description: '用 event_type 区分资讯、融资、投资、并购、政策等事件' },
-  { name: 'IndustryChainNode', label: '产业链节点', level: '首版必落', key: 'chain_code + node_id', source: '产业链信息表', description: '产业链的上游、中游、下游及具体环节' },
-  { name: 'Product', label: '产品 / 技术产品', level: '首版必落', key: '产品 ID / 标准产品名', source: '机构经营产品、产业链产品明细表', description: '企业产品、技术产品与产业链节点' },
-  { name: 'ResearchField', label: '研究方向 / 技术领域', level: '首版必落', key: 'field_id / discipline_code / 标准名', source: '专家方向、论文关键词、项目学科、专利分类', description: '统一研究方向、学科、关键词、IPC 与产业技术领域' },
-  { name: 'Person', label: '通用人员', level: '支撑实体', key: 'person_id', source: '高管、股东、发明人、作者等字段', description: '已确认为同一自然人，但不能确认为专家时使用' },
-  { name: 'Publication', label: '期刊 / 会议 / 出版物', level: '支撑实体', key: 'ISSN / EISSN / publication_id', source: '论文详情和期刊表', description: '论文发表载体及其动态指标' },
-  { name: 'IndustryChain', label: '产业链', level: '支撑实体', key: 'chain_code', source: '产业链信息表', description: '表示整条产业链，与 IndustryChainNode 明确分层' },
+  { name: 'Expert', label: '专家 / 人才 / 学者', level: '核心实体', key: 'scholar_id / expert_id', source: 'dwd_scholar / dwd_paper_author / dwd_project_person / dwd_patent_inventor', description: '统一承载科研与产业人才主体' },
+  { name: 'Organization', label: '机构 / 企业', level: '核心实体', key: 'org_id / external_id / credit_code', source: 'dwd_org_reg_info / dwd_forg_base_info / dwd_paper_affiliation / dwd_patent_applicant', description: '高校、科研机构、企业、医院和政府机构统一建模，用 org_category 区分' },
+  { name: 'Paper', label: '论文', level: '核心实体', key: 'DOI / paper_id', source: 'dwd_zh_paper_detail / dwd_en_paper_detail / dwd_paper_reference', description: '论文成果与引用信息' },
+  { name: 'Project', label: '项目', level: '核心实体', key: 'id / project_number', source: 'dwd_zh_project / dwd_en_project / dwd_project_output', description: '科研项目、资助、参与人员与项目成果' },
+  { name: 'Patent', label: '专利', level: '核心实体', key: 'patent_id / publication_number / application_number', source: 'dwd_patent / dwd_patent_inventor / dwd_patent_applicant', description: '专利成果、法律状态、权利人与技术分类' },
+  { name: 'Report', label: '报告', level: '核心实体', key: 'report_id', source: 'dwd_zh_report / dwd_en_report / dwd_report_author', description: '科技报告及其作者、机构、论文和项目关联' },
+  { name: 'Policy', label: '政策', level: '核心实体', key: 'id / recordId / URL', source: 'dws_zck_policy / dwd_zck_intl_policy / dwd_policy_department', description: '政策文本、发布部门、领域与产业链节点' },
+  { name: 'Event', label: '事件 / 资讯', level: '核心实体', key: 'news_id / URL / 生成 ID', source: 'dwd_org_important_news_info / dwd_industry_chain_news_info / dwd_financing_event', description: '用 event_type 区分资讯、融资、投资、并购、政策等事件' },
+  { name: 'IndustryChainNode', label: '产业链节点', level: '核心实体', key: 'chain_code + node_id', source: 'dwd_industry_chain_info', description: '产业链的上游、中游、下游及具体环节' },
+  { name: 'Product', label: '产品 / 技术产品', level: '核心实体', key: '产品 ID / 标准产品名', source: 'dwd_org_industry_chain_prod_dtl', description: '企业产品、技术产品与产业链节点' },
+  { name: 'ResearchField', label: '研究方向 / 技术领域', level: '核心实体', key: 'field_id / discipline_code / 标准名', source: 'dim_research_field / dim_discipline_code / dim_ipc', description: '统一研究方向、学科、关键词、IPC 与产业技术领域' },
+  { name: 'Person', label: '通用人员', level: '支撑实体', key: 'person_id', source: 'dwd_org_executive / dwd_org_shareholder / dwd_patent_inventor / dwd_paper_author', description: '已确认为同一自然人，但不能确认为专家时使用' },
+  { name: 'Publication', label: '期刊 / 会议 / 出版物', level: '支撑实体', key: 'ISSN / EISSN / publication_id', source: 'dim_publication / dwd_journal', description: '论文发表载体及其动态指标' },
+  { name: 'IndustryChain', label: '产业链', level: '支撑实体', key: 'chain_code', source: 'dim_industry_chain / dwd_industry_chain_info', description: '表示整条产业链，与 IndustryChainNode 明确分层' },
 ]
 
 const factRelations: Relation[] = [
@@ -124,9 +124,9 @@ const alignmentRules = [
 ]
 
 const schemaVersions = [
-  { version: 'v1.8', status: '当前版本', time: '2026-07-12 22:10', entities: '11 核心 / 3 支撑', relations: '42 标准 / 9 推理', change: '统一候选层字段；新增 Event 类型；调整 3 项关系约束', publisher: '张建图' },
-  { version: 'v1.7', status: '历史版本', time: '2026-06-28 18:30', entities: '10 核心 / 3 支撑', relations: '39 标准 / 8 推理', change: '增加 Project / Patent 字段映射与对齐规则', publisher: '张建图' },
-  { version: 'v1.6', status: '历史版本', time: '2026-06-10 20:06', entities: '8 核心 / 2 支撑', relations: '31 标准 / 6 推理', change: '建立专家、机构、论文与项目的基础 Schema', publisher: '张建图' },
+  { version: 'v1.8', status: '当前版本', time: '2026-07-12 22:10', entities: '14 个标准实体', relations: '42 标准 / 9 推理', change: '统一候选层字段；新增 Event 类型；调整 3 项关系约束', publisher: '张建图' },
+  { version: 'v1.7', status: '历史版本', time: '2026-06-28 18:30', entities: '13 个标准实体', relations: '39 标准 / 8 推理', change: '增加 Project / Patent 字段映射与对齐规则', publisher: '张建图' },
+  { version: 'v1.6', status: '历史版本', time: '2026-06-10 20:06', entities: '10 个标准实体', relations: '31 标准 / 6 推理', change: '建立专家、机构、论文与项目的基础 Schema', publisher: '张建图' },
 ]
 
 const normalizedKeyword = computed(() => keyword.value.trim().toLowerCase())
@@ -147,8 +147,8 @@ const filteredAlignment = computed(() => alignmentRules.filter(matches))
     </header>
 
     <section class="schema-summary" aria-label="Schema 概览">
-      <article><span>首版必落实体</span><strong>11</strong><em>专家、机构、论文等</em></article>
-      <article><span>标准事实关系</span><strong>42</strong><em>2 项扩展关系单列</em></article>
+      <article><span>标准实体</span><strong>14</strong><em>专家、机构、论文等</em></article>
+      <article><span>标准事实关系</span><strong>42</strong><em>专家、机构、成果等</em></article>
       <article><span>业务推理关系</span><strong>9</strong><em>均基于事实关系计算</em></article>
       <article><span>候选实体类型</span><strong>9</strong><em>用于对齐与人工审核</em></article>
       <article><span>当前 Schema 版本</span><strong>v1.8</strong><em>上一版 v1.7 · 可回退</em></article>
@@ -156,14 +156,14 @@ const filteredAlignment = computed(() => alignmentRules.filter(matches))
 
     <section class="schema-shell">
       <nav class="schema-tabs"><button v-for="tab in tabs" :key="tab" type="button" :class="{ active: activeTab === tab }" @click="activeTab=tab;keyword=''">{{ tab }}</button></nav>
-      <div class="schema-toolbar"><div><strong>{{ activeTab }}</strong><span v-if="activeTab === '候选层'">候选数据不直接作为业务展示主体</span><span v-else-if="activeTab === '推理关系'">推理关系必须保留 evidence 和 confidence</span><span v-else-if="activeTab === '属性定义'">枚举字典作为属性约束统一维护</span><span v-else-if="activeTab === '版本记录'">记录每次发布的结构变更与影响范围</span></div><label v-if="activeTab !== '版本记录'"><span>⌕</span><input v-model="keyword" :placeholder="`搜索${activeTab}`" /></label></div>
+      <div class="schema-toolbar"><div><strong>{{ activeTab }}</strong><span v-if="activeTab === '候选层'">候选数据不直接作为业务展示主体</span><span v-else-if="activeTab === '属性定义'">枚举字典作为属性约束统一维护</span><span v-else-if="activeTab === '版本记录'">记录每次发布的结构变更与影响范围</span></div><label v-if="activeTab !== '版本记录'"><span>⌕</span><input v-model="keyword" :placeholder="`搜索${activeTab}`" /></label></div>
       <p v-if="schemaVersionMessage" class="schema-version-message">{{ schemaVersionMessage }}</p>
 
-      <div v-if="activeTab === '标准实体'" class="schema-table-wrap"><table><thead><tr><th>实体中文名</th><th>Schema 名称</th><th>分层</th><th>主键 / 唯一标识</th><th>主要来源表组</th><th>建模说明</th></tr></thead><tbody><tr v-for="row in filteredEntities" :key="row.name"><td><b>{{ row.label }}</b></td><td><code>{{ row.name }}</code></td><td><span :class="row.level === '首版必落' ? 'core' : 'support'">{{ row.level }}</span></td><td>{{ row.key }}</td><td>{{ row.source }}</td><td>{{ row.description }}</td></tr></tbody></table></div>
+      <div v-if="activeTab === '标准实体'" class="schema-table-wrap"><table><thead><tr><th>实体中文名</th><th>Schema 名称</th><th>主键 / 唯一标识</th><th>主要来源表组</th><th>建模说明</th></tr></thead><tbody><tr v-for="row in filteredEntities" :key="row.name"><td><b>{{ row.label }}</b></td><td><code>{{ row.name }}</code></td><td>{{ row.key }}</td><td>{{ row.source }}</td><td>{{ row.description }}</td></tr></tbody></table></div>
 
-      <div v-else-if="activeTab === '事实关系'" class="schema-table-wrap"><table><thead><tr><th>关系中文名</th><th>关系英文名</th><th>起点</th><th>终点</th><th>生成依据</th><th>层级</th></tr></thead><tbody><tr v-for="row in filteredFacts" :key="row.name"><td><b>{{ row.label }}</b></td><td><code>{{ row.name }}</code></td><td>{{ row.source }}</td><td>{{ row.target }}</td><td>{{ row.basis }}</td><td><span :class="row.level === '扩展' ? 'support' : 'core'">{{ row.level || '标准' }}</span></td></tr></tbody></table></div>
+      <div v-else-if="activeTab === '事实关系'" class="schema-table-wrap"><table><thead><tr><th>关系中文名</th><th>关系英文名</th><th>起点</th><th>终点</th><th>生成依据</th></tr></thead><tbody><tr v-for="row in filteredFacts" :key="row.name"><td><b>{{ row.label }}</b></td><td><code>{{ row.name }}</code></td><td>{{ row.source }}</td><td>{{ row.target }}</td><td>{{ row.basis }}</td></tr></tbody></table></div>
 
-      <div v-else-if="activeTab === '推理关系'" class="schema-table-wrap"><table><thead><tr><th>推理关系</th><th>Schema 名称</th><th>起点</th><th>终点</th><th>生成依据</th><th>必备追溯</th></tr></thead><tbody><tr v-for="row in filteredInference" :key="row.name"><td><b>{{ row.label }}</b></td><td><code>{{ row.name }}</code></td><td>{{ row.source }}</td><td>{{ row.target }}</td><td>{{ row.basis }}</td><td><span class="evidence">evidence + confidence</span></td></tr></tbody></table></div>
+      <div v-else-if="activeTab === '推理关系'" class="schema-table-wrap"><table><thead><tr><th>推理关系</th><th>Schema 名称</th><th>起点</th><th>终点</th><th>生成依据</th></tr></thead><tbody><tr v-for="row in filteredInference" :key="row.name"><td><b>{{ row.label }}</b></td><td><code>{{ row.name }}</code></td><td>{{ row.source }}</td><td>{{ row.target }}</td><td>{{ row.basis }}</td></tr></tbody></table></div>
 
       <div v-else-if="activeTab === '属性定义'" class="schema-table-wrap"><table><thead><tr><th>实体</th><th>主键</th><th>核心属性</th><th>动态属性 / 补充</th><th>主要来源</th></tr></thead><tbody><tr v-for="row in filteredAttributes" :key="row.entity"><td><code>{{ row.entity }}</code></td><td><b>{{ row.key }}</b></td><td class="mono-list">{{ row.core }}</td><td>{{ row.dynamic }}</td><td>{{ row.source }}</td></tr></tbody></table></div>
 

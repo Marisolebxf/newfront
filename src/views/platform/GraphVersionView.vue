@@ -29,7 +29,7 @@ const submitRollback = () => {
     <p v-if="actionMessage" class="version-message">{{ actionMessage }}</p>
 
     <section class="version-list">
-      <header><div><h2>版本记录</h2><p>保留发布内容、Schema、来源任务和操作人员，支持审计与回退。</p></div><span>共 {{ versions.length }} 个稳定版本</span></header>
+      <header><div><h2>版本记录</h2></div><span>共 {{ versions.length }} 个稳定版本</span></header>
       <table><thead><tr><th>图谱版本</th><th>状态</th><th>实体变化</th><th>关系变化</th><th>属性变化</th><th>Schema</th><th>来源任务</th><th>发布时间</th><th>发布人</th><th>操作</th></tr></thead><tbody><tr v-for="row in versions" :key="row.version"><td><strong>{{ row.version }}</strong><small>{{ row.note }}</small></td><td><em :class="row.status === '当前线上' ? 'is-current' : ''">{{ row.status }}</em></td><td>{{ row.entities }}</td><td>{{ row.relations }}</td><td>{{ row.properties }}</td><td>{{ row.schema }}</td><td><RouterLink :to="`/task-detail/construction/${row.task}?step=persist`">{{ row.task }}</RouterLink></td><td>{{ row.publishedAt }}</td><td>{{ row.publisher }}</td><td><div class="version-actions"><button type="button" @click="selectedVersion=row">变更详情</button><button v-if="row.status !== '当前线上'" class="danger" type="button" @click="rollbackVersion=row">申请回退</button></div></td></tr></tbody></table>
     </section>
 

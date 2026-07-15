@@ -366,8 +366,9 @@ const latestChanges = [
 ]
 
 const managementRisks = [
-  { level: '严重', title: '张明远候选实体存在冲突', detail: 'PI-20260714-0004 · 实体对齐 · 待王审核确认', detailTo: '/processing-instance/PI-20260714-0004', reviewTo: '/manual-review/task/PI-20260714-0004' },
-  { level: '严重', title: '重复论文成果记录待确认', detail: 'PI-20260714-0007 · 唯一性校验 · 待李质量确认', detailTo: '/processing-instance/PI-20260714-0007', reviewTo: '/manual-review/task/PI-20260714-0007' },
+  { level: '高风险', title: '大模型抽取流程已阻断', detail: 'PI-20260714-0101 · 326 条受影响 · 张建图', detailTo: '/processing-instance/PI-20260714-0101', reviewTo: '/manual-review/task/PI-20260714-0101' },
+  { level: '高风险', title: 'Schema 批量映射失败', detail: 'PI-20260714-0102 · 1,284 条任务受影响 · 张建图', detailTo: '/processing-instance/PI-20260714-0102', reviewTo: '/manual-review/task/PI-20260714-0102' },
+  { level: '中风险', title: '张明远候选实体存在冲突', detail: 'PI-20260714-0004 · 实体对齐 · 王审核', detailTo: '/processing-instance/PI-20260714-0004', reviewTo: '/manual-review/task/PI-20260714-0004' },
 ]
 
 
@@ -693,12 +694,12 @@ const pageMeta = computed(() => {
 
       <section class="platform-overview-main">
         <div class="kg-panel platform-latest-changes">
-          <div class="kg-panel__header"><div><h2 class="kg-panel__title">今日新增与变化</h2><span>新增了什么、改变了什么、影响了哪些对象</span></div><RouterLink to="/tasks">查看全部任务 →</RouterLink></div>
+          <div class="kg-panel__header"><div><h2 class="kg-panel__title">今日新增与变化</h2></div><RouterLink to="/tasks">查看全部任务 →</RouterLink></div>
           <div class="platform-change-feed"><RouterLink v-for="item in latestChanges" :key="`${item.time}-${item.title}`" :to="item.to"><time>{{ item.time }}</time><span :class="`is-${item.type}`">{{ item.type }}</span><div><strong>{{ item.title }}</strong><p>{{ item.detail }}</p><em>{{ item.domain }} · {{ item.impact }}</em></div><b>查看详情 →</b></RouterLink></div>
         </div>
 
         <aside class="kg-panel platform-risk-panel">
-          <div class="kg-panel__header"><div><h2 class="kg-panel__title">需要人工审核的任务</h2><span>展示分配给当前用户的具体处理实例</span></div><RouterLink to="/manual-review">查看处理队列 →</RouterLink></div>
+          <div class="kg-panel__header"><div><h2 class="kg-panel__title">需要人工审核的任务</h2></div><RouterLink to="/manual-review">查看处理队列 →</RouterLink></div>
           <div class="platform-risk-list"><article v-for="item in managementRisks" :key="item.title" :class="`is-${item.level}`"><i /><div><span><b>{{ item.level }}</b></span><strong>{{ item.title }}</strong><p>{{ item.detail }}</p><nav><RouterLink :to="item.detailTo">查看详情</RouterLink><RouterLink class="primary" :to="item.reviewTo">人工处理</RouterLink></nav></div></article></div>
         </aside>
       </section>
@@ -716,7 +717,7 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-source-panel">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">科技要素数据库更新</h2>
-          <span>平台仅接入科技要素数据库；定时任务自动运行，此处用于人工补跑或紧急更新</span>
+          <span>自动更新：每日 02:00</span>
         </div>
         <div class="platform-processing-controls">
           <label>
@@ -747,7 +748,7 @@ const pageMeta = computed(() => {
           </label>
           <button class="kg-button" type="button" :disabled="isActionLoading || (processingPriority === '紧急' && !processingReason.trim())" @click="handleStartTask">{{ processingActionLabel }}</button>
         </div>
-        <div class="platform-update-help"><span><b>普通：</b>按提交顺序进入队列，不影响已运行任务。</span><span><b>紧急：</b>提高排队优先级，但不会中断正在执行的任务，必须填写原因。</span><span><b>创建并执行：</b>表示人工立即触发；“定时更新”由系统调度，无需人工选择。</span></div>
+        <div class="platform-update-help"><span><b>普通：</b>按提交顺序排队。</span><span><b>紧急：</b>优先排队，需填写原因。</span></div>
 
         <div class="platform-sticky-table"><table class="platform-table">
           <thead>
@@ -771,7 +772,6 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-cleaning-flow">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">数据处理流程</h2>
-          <span>从源库同步到标准结构化库表</span>
         </div>
         <div class="platform-cleaning-steps">
           <article v-for="(item, index) in dataProcessingSteps" :key="item.name" class="is-clickable-card" tabindex="0" role="button" @click="openProcessDetail('processing', 'DP-20260713-0200', item.id)" @keydown.enter="openProcessDetail('processing', 'DP-20260713-0200', item.id)">
@@ -789,7 +789,6 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-quality-log">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">质量检验日志</h2>
-          <span>关联来源批次、质检规则和人工处理单</span>
         </div>
         <table class="platform-table">
           <thead><tr><th>质检规则</th><th>检验对象</th><th>来源批次</th><th>检验数</th><th>异常数</th><th>通过率</th><th>状态</th><th>操作</th></tr></thead>
@@ -801,7 +800,7 @@ const pageMeta = computed(() => {
         <div class="platform-review-notice__icon" aria-hidden="true">!</div>
         <div>
           <strong>发现 385 条数据质量异常</strong>
-          <p>包含必填缺失、唯一性冲突和枚举不一致。数据处理页仅展示异常摘要，人工判定与修正在独立工作台完成。</p>
+          <p>必填缺失 18 条 · 唯一性冲突 326 条 · 枚举异常 41 条</p>
         </div>
         <div class="platform-review-notice__actions"><RouterLink to="/tasks?module=图谱构建&amp;batch=UPD-20260714">查看处理实例</RouterLink><RouterLink to="/manual-review?batch=UPD-20260714">进入人工处理 →</RouterLink></div>
       </section>
@@ -849,7 +848,6 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-build-pipeline">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">结构化数据建图过程</h2>
-          <span>从标准表读取、Schema 映射、实体关系生成，到自动入库与异常分流</span>
         </div>
         <div class="platform-build-pipeline__body">
           <article v-for="(item, index) in buildPipelineSteps" :key="item.name" class="is-clickable-card" tabindex="0" role="button" @click="openProcessDetail('construction', 'KG-INC-20260713-018', item.id)" @keydown.enter="openProcessDetail('construction', 'KG-INC-20260713-018', item.id)">
@@ -868,7 +866,7 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-build-progress platform-build-progress--list">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">最近图谱构建任务</h2>
-          <div class="platform-task-filters"><span>模块页仅展示最近批次</span><RouterLink to="/tasks?module=图谱构建">全部任务 →</RouterLink></div>
+          <div class="platform-task-filters"><RouterLink to="/tasks?module=图谱构建">全部任务 →</RouterLink></div>
         </div>
         <table class="platform-table platform-progress-table">
           <thead>
@@ -887,7 +885,7 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-schema-readonly">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">当前 Schema 摘要（只读）</h2>
-          <div class="platform-schema-head"><span>v1.8 · 当前构建批次使用的模型版本</span><RouterLink to="/schema">打开 Schema 浏览器 →</RouterLink></div>
+          <div class="platform-schema-head"><span>v1.8</span><RouterLink to="/schema">打开 Schema 浏览器 →</RouterLink></div>
         </div>
         <table class="platform-table">
           <thead><tr><th>类型</th><th>Schema 名称</th><th>字段 / 属性</th><th>映射与生成规则</th><th>权限</th></tr></thead>
@@ -899,7 +897,7 @@ const pageMeta = computed(() => {
         <div class="platform-review-notice__icon" aria-hidden="true">!</div>
         <div>
           <strong>326 个候选对象需要人工确认</strong>
-          <p>86 个实体冲突、198 条低置信度关系、42 项属性异常已转入人工处理平台，不在构建页直接编辑。</p>
+          <p>实体冲突 86 个 · 低置信度关系 198 条 · 属性异常 42 项</p>
         </div>
         <div class="platform-review-notice__actions"><RouterLink to="/tasks?module=图谱构建&amp;batch=UPD-20260714">查看处理实例</RouterLink><RouterLink to="/manual-review?batch=UPD-20260714">进入人工处理 →</RouterLink></div>
       </section>
@@ -999,7 +997,6 @@ const pageMeta = computed(() => {
             <ul>
               <li>点击实体节点查看实体属性、命中关系与来源信息。</li>
               <li>点击关系线查看两端实体之间的关系类型、置信度与来源说明。</li>
-              <li>实体置信度衡量节点对齐、消歧和类型归一可信度；关系置信度衡量关系识别或推理可信度。</li>
             </ul>
           </div>
         </div>
@@ -1011,9 +1008,8 @@ const pageMeta = computed(() => {
             </div>
           </dl>
           <div v-if="selectedQueryNode.evidence.length" class="platform-evidence">
-            <strong>实体置信度说明</strong>
+            <strong>对齐依据</strong>
             <ul>
-              <li>实体已经入图展示，置信度不是“是否存在”，而是该节点是否可靠合并到标准实体的评分。</li>
               <li v-for="(line, index) in selectedQueryNode.evidence.slice(0, 3)" :key="index">{{ line }}</li>
             </ul>
           </div>
@@ -1025,13 +1021,6 @@ const pageMeta = computed(() => {
               <dd>{{ value }}</dd>
             </div>
           </dl>
-          <div class="platform-evidence">
-            <strong>多关系展示策略</strong>
-            <ul>
-              <li>图谱画布保持一条关系线承载当前主关系，避免多条线重叠。</li>
-              <li>完整关系、来源说明和置信度在右侧详情中展开。</li>
-            </ul>
-          </div>
         </div>
         <div v-else-if="queryDetailMode === 'provenance' && selectedQueryProvenance && selectedQueryProvenanceTarget" class="platform-detail__body">
           <section class="platform-provenance" aria-label="图谱数据溯源">
@@ -1256,7 +1245,7 @@ print(response.json())</pre>
       <header><div><span>今日图谱数据变化</span><h2>{{ activeAssetOverview.title }}新增明细</h2><p>{{ activeAssetOverview.addedLabel }} {{ activeAssetOverview.added }} · 数据更新至 10:30</p></div><button type="button" @click="selectedAssetChange = null">×</button></header>
       <section class="asset-change-summary"><article><span>当前总量</span><strong>{{ activeAssetOverview.total }}</strong></article><article><span>{{ activeAssetOverview.addedLabel }}</span><strong>{{ activeAssetOverview.added }}</strong></article></section>
       <div class="asset-change-table"><table><thead><tr><th>数据类型</th><th>具体对象</th><th>变更内容</th><th>来源</th><th>识别时间</th></tr></thead><tbody><tr v-for="row in assetChangeRows[selectedAssetChange]" :key="`${row.object}-${row.time}`"><td>{{ row.type }}</td><td><strong>{{ row.object }}</strong></td><td>{{ row.change }}</td><td><code>{{ row.source }}</code></td><td>{{ row.time }}</td></tr></tbody></table></div>
-      <footer><span>这里展示部分示例，完整数据可按任务批次继续追溯。</span><RouterLink to="/tasks">查看对应更新任务 →</RouterLink></footer>
+      <footer><span>{{ assetChangeRows[selectedAssetChange].length }} 条变化</span><RouterLink to="/tasks">查看对应更新任务 →</RouterLink></footer>
     </aside>
 
   </div>
@@ -4204,4 +4193,5 @@ print(response.json())</pre>
 .asset-change-table{min-height:0;overflow:auto;padding:0 14px 14px}.asset-change-table table{width:100%;border-collapse:collapse;border:1px solid #dce8f8;background:#fff;font-size:12px}.asset-change-table th,.asset-change-table td{height:48px;padding:10px 12px;border-bottom:1px solid #e3ebf6;text-align:left}.asset-change-table th{position:sticky;top:0;background:#f3f7fc;color:#62728a}.asset-change-table td{color:#344861}.asset-change-table code{color:#165dff;font-family:inherit}
 .asset-change-drawer>footer{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-top:1px solid #dce8f8;background:#fff}.asset-change-drawer>footer span{color:#718098;font-size:11px}.asset-change-drawer>footer a{height:32px;padding:0 12px;border-radius:5px;background:#165dff;color:#fff;font-size:11px;line-height:32px;text-decoration:none}
 @media(max-width:760px){.asset-change-drawer{width:94vw}.asset-change-table table{min-width:700px}}
+.platform-risk-list article.is-高风险>i{background:#d92d20;box-shadow:0 0 0 4px #fee4e2}.platform-risk-list article.is-高风险 span b{background:#fee4e2;color:#b42318}.platform-risk-list article.is-中风险>i{background:#f79009;box-shadow:0 0 0 4px #fef0c7}.platform-risk-list article.is-中风险 span b{background:#fff3df;color:#b54708}
 </style>

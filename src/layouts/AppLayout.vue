@@ -14,10 +14,12 @@ import navTasks from '../assets/icons/nav-tasks.svg'
 import { useAppStore } from '../stores/app'
 import avatarBen from '../assets/images/avatar-ben.png'
 import logoKg from '../assets/images/logo-kg.png'
+import { getReviewPriority, reviewRecords } from '../views/platform/manual-review-data'
 
 const route = useRoute()
 const appStore = useAppStore()
 const pageTitle = computed(() => String(route.meta.title ?? '亿级知识图谱'))
+const showPageContext = computed(() => !route.path.startsWith('/processing-instance/') && !route.path.startsWith('/manual-review/task/') && !route.path.startsWith('/task-detail/'))
 const activePrimaryNav = computed(() => {
   if (route.path.startsWith('/manual-review')) return 'manual-review'
   if (route.path === '/tasks' || route.path.startsWith('/processing-instance/') || route.path.startsWith('/task-detail/')) return 'tasks'
@@ -41,16 +43,22 @@ const assistantQuestion = ref('')
 const assistantMessages = ref<Array<{ role: 'assistant' | 'user'; content: string; sources?: string[] }>>([
   { role: 'assistant', content: '您好，我是知识图谱助手。您可以询问专家、机构、论文、项目关系，也可以查询平台当前的任务与异常。' },
 ])
-const alertFilter = ref<'全部' | '已阻断' | '待处理'>('全部')
-const alertItems = [
-  { id: 'PI-20260714-0004', severity: '严重', module: '图谱构建', title: '张明远候选实体存在冲突', meta: 'PI-20260714-0004 · 实体对齐 · 置信度 0.82', time: '2 分钟前', blocked: true, status: '待处理', detailTo: '/processing-instance/PI-20260714-0004', reviewTo: '/manual-review/task/PI-20260714-0004' },
-  { id: 'PI-20260714-0007', severity: '严重', module: '数据处理', title: '重复论文成果记录待确认', meta: 'PI-20260714-0007 · 唯一性校验 · 置信度 0.69', time: '36 分钟前', blocked: true, status: '待处理', detailTo: '/processing-instance/PI-20260714-0007', reviewTo: '/manual-review/task/PI-20260714-0007' },
-  { id: 'PI-20260714-0005', severity: '警告', module: '图谱构建', title: '企业合作关系证据不足', meta: 'PI-20260714-0005 · 关系证据校验 · 陈治理处理中', time: '今日 10:31', blocked: false, status: '处理中', detailTo: '/processing-instance/PI-20260714-0005', reviewTo: '/manual-review/task/PI-20260714-0005' },
-]
-const filteredAlertItems = computed(() => alertItems.filter((item) => (
-  alertFilter.value === '全部'
-  || (alertFilter.value === '已阻断' ? item.blocked : item.status === '待处理')
-)))
+const alertItems = computed(() => reviewRecords.filter((record) => record.status !== '已完成').map((record) => {
+  const priority = getReviewPriority(record)
+  return {
+    id: record.id,
+    severity: priority.scope,
+    module: record.module,
+    title: `${record.object}：${record.type}`,
+    meta: `${record.id} · ${record.node} · ${record.evidence}`,
+    time: record.updatedAt,
+    status: record.status,
+    hasReviewDetail: true,
+    detailTo: `/processing-instance/${record.id}`,
+    reviewTo: `/manual-review/task/${record.id}`,
+  }
+}))
+const blockedAlertCount = computed(() => alertItems.value.filter((item) => item.severity === '高风险').length)
 const serviceNavItems = [
   { to: '/expert-direct', label: '专家直接关系', fullLabel: '科技专家直接关系' },
   { to: '/node-indirect', label: '单节点间接关系', fullLabel: '科技单节点间接关系' },
@@ -96,12 +104,8 @@ function toggleUserMenu() {
   userMenuOpen.value = !userMenuOpen.value
 }
 
-function handleAccountAction(action: '账号管理' | '切换账号' | '退出登录') {
-  accountFeedback.value = action === '账号管理'
-    ? '账号与安全由统一门户管理，即将返回门户账号中心。'
-    : action === '切换账号'
-      ? '即将退出当前统一认证并返回门户选择账号。'
-      : '即将退出知识图谱平台并返回统一门户。'
+function handleAccountAction(action: '个人中心' | '账号与安全' | '操作记录' | '退出登录') {
+  accountFeedback.value = action === '退出登录' ? '正在安全退出系统。' : `已打开${action}。`
 }
 
 function toggleAssistant() {
@@ -285,32 +289,31 @@ onBeforeUnmount(() => {
 
         <main class="app-main" :class="{ 'is-overview-page': route.path === '/overview' }">
           <div class="app-top-actions">
-            <span class="app-top-actions__context">{{ pageTitle }}</span>
+            <span v-if="showPageContext" class="app-top-actions__context">{{ pageTitle }}</span>
             <div class="app-top-actions__right">
               <div class="app-alert-entry" @mouseenter="alertPreviewOpen = !alertDrawerOpen" @mouseleave="alertPreviewOpen = false">
-                <button class="app-alert-bell" type="button" aria-label="3 条人工审核任务通知" :aria-expanded="alertDrawerOpen" @click="openAlertDrawer">
+                <button class="app-alert-bell" type="button" :aria-label="`${alertItems.length} 条异常与人工处理通知`" :aria-expanded="alertDrawerOpen" @click="openAlertDrawer">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
-                  <b>3</b>
+                  <b>{{ alertItems.length }}</b>
                 </button>
-                <aside v-if="alertPreviewOpen" class="alert-preview" aria-label="人工审核任务概览">
-                  <header><div><strong>人工审核任务</strong><span>实时更新</span></div><em>点击铃铛查看全部</em></header>
-                  <section><article><strong>3</strong><span>待办通知</span></article><article class="danger"><strong>2</strong><span>已阻断任务</span></article><article><strong>1</strong><span>处理中任务</span></article></section>
-                  <div><p v-for="item in alertItems.slice(0, 2)" :key="item.id"><i :class="`is-${item.severity}`" /><span><strong>{{ item.title }}</strong><em>{{ item.module }} · {{ item.time }}</em></span></p></div>
+                <aside v-if="alertPreviewOpen" class="alert-preview" aria-label="异常与人工处理概览">
+                  <header><div><strong>异常与人工处理</strong><span>实时更新</span></div><em>点击铃铛查看全部</em></header>
+                  <section><article><strong>{{ alertItems.length }}</strong><span>待处理</span></article><article class="danger"><strong>{{ blockedAlertCount }}</strong><span>阻断流程</span></article></section>
                 </aside>
               </div>
               <div ref="userEntryRef" class="app-user-entry">
-                <button class="app-top-actions__user" type="button" aria-label="当前门户用户" :aria-expanded="userMenuOpen" @click="toggleUserMenu">
+                <button class="app-top-actions__user" type="button" aria-label="当前登录用户：图谱管理员张建图" :aria-expanded="userMenuOpen" @click="toggleUserMenu">
                   <img :src="avatarBen" alt="" aria-hidden="true" />
-                  <span><strong>门户用户</strong><em>统一认证</em></span>
+                  <span><strong>张建图</strong><em>图谱管理员</em></span>
                   <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4" /></svg>
                 </button>
                 <aside v-if="userMenuOpen" class="app-user-menu">
-                  <header><img :src="avatarBen" alt="" /><div><strong>门户用户</strong><span>科技管理部门 · 统一认证</span></div></header>
-                  <p>账号、认证与安全策略由门户系统统一管理。</p>
+                  <header><img :src="avatarBen" alt="" /><div><strong>张建图</strong><span>图谱管理员</span></div><b>管理员</b></header>
                   <nav>
-                    <button type="button" @click="handleAccountAction('账号管理')"><span>账号与安全</span><em>前往统一门户</em></button>
-                    <button type="button" @click="handleAccountAction('切换账号')"><span>切换账号</span><em>重新统一认证</em></button>
-                    <button class="danger" type="button" @click="handleAccountAction('退出登录')"><span>退出登录</span><em>返回门户首页</em></button>
+                    <button type="button" @click="handleAccountAction('个人中心')"><i>人</i><span>个人中心</span></button>
+                    <button type="button" @click="handleAccountAction('账号与安全')"><i>安</i><span>账号与安全</span></button>
+                    <button type="button" @click="handleAccountAction('操作记录')"><i>录</i><span>操作记录</span></button>
+                    <button class="danger" type="button" @click="handleAccountAction('退出登录')"><i>退</i><span>退出登录</span></button>
                   </nav>
                   <footer v-if="accountFeedback">{{ accountFeedback }}</footer>
                 </aside>
@@ -326,13 +329,12 @@ onBeforeUnmount(() => {
           </section>
         </main>
         <button v-if="alertDrawerOpen" class="alert-drawer-mask" type="button" aria-label="关闭告警抽屉" @click="alertDrawerOpen = false" />
-        <aside v-if="alertDrawerOpen" class="alert-drawer" aria-label="人工审核任务通知">
-          <header><div><h2>人工审核任务</h2><p>3 条待办 · 2 个任务已阻断</p></div><button type="button" aria-label="关闭" @click="alertDrawerOpen = false">×</button></header>
-          <div class="alert-drawer__filter"><button v-for="item in (['全部', '已阻断', '待处理'] as const)" :key="item" :class="{ active: alertFilter === item }" type="button" @click="alertFilter = item">{{ item }}</button></div>
+        <aside v-if="alertDrawerOpen" class="alert-drawer" aria-label="异常与人工处理通知">
+          <header><div><h2>异常与人工处理</h2><p>{{ alertItems.length }} 条待处理，与人工审核队列同步</p></div><button type="button" aria-label="关闭" @click="alertDrawerOpen = false">×</button></header>
           <div class="alert-drawer__list">
-            <article v-for="item in filteredAlertItems" :key="item.id" class="alert-item">
+            <article v-for="item in alertItems" :key="item.id" class="alert-item">
               <i :class="`is-${item.severity}`"></i>
-              <div><span><b>{{ item.severity }}</b>{{ item.module }}<em>{{ item.time }}</em></span><strong>{{ item.title }}</strong><p>{{ item.meta }}</p><small :class="{ 'is-processing': item.status === '处理中' }">{{ item.status === '处理中' ? '人工处理中' : '已阻断下游处理' }}</small><nav><RouterLink :to="item.detailTo">查看详情</RouterLink><RouterLink class="primary" :to="item.reviewTo">人工处理</RouterLink></nav></div>
+              <div><span><b :class="`is-${item.severity}`">{{ item.severity }}</b>{{ item.module }}<em>{{ item.time }}</em></span><strong>{{ item.title }}</strong><p>{{ item.meta }}</p><small>待人工处理</small><nav><template v-if="item.hasReviewDetail"><RouterLink :to="item.detailTo">查看详情</RouterLink><RouterLink class="primary" :to="item.reviewTo">人工处理</RouterLink></template><button v-else type="button" disabled>查看详情</button></nav></div>
             </article>
           </div>
           <footer><RouterLink to="/tasks">查看全部任务</RouterLink><RouterLink class="footer-primary" to="/manual-review">查看处理队列 →</RouterLink></footer>
@@ -730,17 +732,17 @@ onBeforeUnmount(() => {
 .app-top-actions__user[aria-expanded="true"] { border-color:#8fb7f2;background:#fff;box-shadow:0 5px 14px rgba(44,91,157,.1); }
 .app-top-actions__user[aria-expanded="true"]>svg { transform:rotate(180deg); }
 .app-user-entry { position:relative;z-index:38; }
-.app-user-menu { position:absolute;z-index:48;top:39px;right:0;width:285px;overflow:hidden;border:1px solid #c8daf4;border-radius:9px;background:#fff;box-shadow:0 18px 45px rgba(34,74,132,.2);color:#263853; }
+.app-user-menu { position:absolute;z-index:48;top:39px;right:0;width:250px;overflow:hidden;border:1px solid #c8daf4;border-radius:9px;background:#fff;box-shadow:0 18px 45px rgba(34,74,132,.2);color:#263853; }
 .app-user-menu::before { position:absolute;top:-6px;right:25px;width:11px;height:11px;border-top:1px solid #c8daf4;border-left:1px solid #c8daf4;background:#fff;content:"";transform:rotate(45deg); }
-.app-user-menu>header { position:relative;display:flex;align-items:center;gap:10px;padding:14px;border-bottom:1px solid #e4ecf6;background:#fbfdff; }
+.app-user-menu>header { position:relative;display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:10px;padding:14px;border-bottom:1px solid #e4ecf6;background:#fbfdff; }
 .app-user-menu>header img { width:34px;height:34px;border-radius:50%;object-fit:cover; }
-.app-user-menu>header div { display:grid;gap:3px; }.app-user-menu>header strong { font-size:13px; }.app-user-menu>header span { color:#75839a;font-size:10px; }
+.app-user-menu>header div { display:grid;gap:3px; }.app-user-menu>header strong { font-size:13px; }.app-user-menu>header span { color:#75839a;font-size:10px; }.app-user-menu>header b { padding:2px 6px;border-radius:99px;background:#eaf2ff;color:#175cd3;font-size:9px;font-weight:500; }
 .app-user-menu>p { margin:0;padding:10px 14px;border-bottom:1px solid #e9eff7;color:#718098;font-size:10px;line-height:17px; }
-.app-user-menu nav { display:grid;padding:6px; }.app-user-menu nav button { display:flex;align-items:center;justify-content:space-between;height:42px;padding:0 9px;border:0;border-radius:5px;background:#fff;color:#344766;text-align:left;cursor:pointer; }.app-user-menu nav button:hover { background:#f1f6fd;color:#165dff; }.app-user-menu nav button span { font-size:11px; }.app-user-menu nav button em { color:#8491a5;font-size:9px;font-style:normal; }.app-user-menu nav button.danger span { color:#b42318; }
+.app-user-menu nav { display:grid;padding:6px; }.app-user-menu nav button { display:flex;align-items:center;justify-content:flex-start;gap:10px;height:40px;padding:0 10px;border:0;border-radius:5px;background:#fff;color:#344766;text-align:left;cursor:pointer; }.app-user-menu nav button:hover { background:#f1f6fd;color:#165dff; }.app-user-menu nav button i { display:grid;place-items:center;width:22px;height:22px;border-radius:5px;background:#edf3fb;color:#526783;font-size:9px;font-style:normal; }.app-user-menu nav button span { font-size:11px; }.app-user-menu nav button.danger { margin-top:5px;border-top:1px solid #e8eef6;border-radius:0 0 5px 5px; }.app-user-menu nav button.danger span,.app-user-menu nav button.danger i { color:#b42318; }
 .app-user-menu>footer { padding:9px 13px;border-top:1px solid #e4ecf6;background:#f7faff;color:#526783;font-size:9px;line-height:15px; }
 
 .app-top-actions__context { color: #65738a; font-size: 13px; }
-.app-top-actions__right { display: flex; align-items: center; gap: 10px; }
+.app-top-actions__right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .app-alert-entry { position: relative; z-index: 38; display: inline-flex; }
 .app-alert-bell { position: relative; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid rgba(191,215,250,.96); border-radius: 7px; background: rgba(255,255,255,.9); color: #40516c; cursor: pointer; }
 .app-alert-bell:hover,.app-alert-bell[aria-expanded="true"] { border-color: #8fb7f2; background: #fff; color: #165dff; }
@@ -753,7 +755,7 @@ onBeforeUnmount(() => {
 .alert-preview>header strong { font-size:14px; }
 .alert-preview>header span { padding:2px 6px;border-radius:999px;background:#e9f8ef;color:#067647;font-size:9px; }
 .alert-preview>header em { color:#7a899f;font-size:9px;font-style:normal; }
-.alert-preview>section { display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:10px 12px;background:#f7faff; }
+.alert-preview>section { display:grid;grid-template-columns:repeat(2,1fr);gap:7px;padding:10px 12px;background:#f7faff; }
 .alert-preview>section article { display:grid;gap:2px;padding:9px;border:1px solid #dce8f8;border-radius:6px;background:#fff; }
 .alert-preview>section article strong { color:#165dff;font-size:18px; }
 .alert-preview>section article.danger strong { color:#d92d20; }
@@ -762,7 +764,7 @@ onBeforeUnmount(() => {
 .alert-preview>div p { display:grid;grid-template-columns:7px minmax(0,1fr);gap:9px;margin:0;padding:8px 2px;border-bottom:1px solid #edf2f8; }
 .alert-preview>div p:last-child { border-bottom:0; }
 .alert-preview>div p>i { width:7px;height:7px;margin-top:5px;border-radius:50%;background:#f79009; }
-.alert-preview>div p>i.is-严重 { background:#d92d20; }
+.alert-preview>div p>i.is-高风险 { background:#d92d20; }
 .alert-preview>div p span { display:grid;gap:2px; }
 .alert-preview>div p strong { overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap; }
 .alert-preview>div p em { color:#8592a6;font-size:9px;font-style:normal; }
@@ -780,17 +782,20 @@ onBeforeUnmount(() => {
 .alert-item { display: grid; grid-template-columns: 8px minmax(0,1fr) 14px; gap: 10px; margin-bottom: 8px; padding: 13px 12px; border: 1px solid #dce8f8; border-radius: 8px; background: #fff; color: #263853; text-decoration: none; }
 .alert-item:hover { border-color: #8fb7f2; box-shadow: 0 6px 16px rgba(48,105,194,.09); }
 .alert-item>i { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: #2e90fa; }
-.alert-item>i.is-严重 { background: #d92d20; box-shadow: 0 0 0 4px #fee4e2; }
-.alert-item>i.is-警告 { background: #f79009; box-shadow: 0 0 0 4px #fef0c7; }
+.alert-item>i.is-高风险 { background: #d92d20; box-shadow: 0 0 0 4px #fee4e2; }
+.alert-item>i.is-中风险 { background: #f79009; box-shadow: 0 0 0 4px #fef0c7; }
 .alert-item>div>span { display: flex; align-items: center; gap: 7px; color: #77859b; font-size: 11px; }
-.alert-item>div>span b { color: #d92d20; }
+.alert-item>div>span b.is-高风险 { color: #d92d20; }
+.alert-item>div>span b.is-中风险 { color: #b54708; }
 .alert-item>div>span em { margin-left: auto; font-style: normal; }
 .alert-item strong { display: block; margin-top: 7px; color: #233550; font-size: 13px; line-height: 20px; }
 .alert-item p { margin: 4px 0 0; color: #73819a; font-size: 11px; }
-.alert-item small { display: inline-flex; margin-top: 8px; padding: 2px 7px; border-radius: 999px; background: #fee4e2; color: #b42318; font-size: 10px; }
+.alert-item small { display: inline-flex; margin-top: 8px; padding: 2px 7px; border-radius: 999px; background: #fff3d8; color: #b54708; font-size: 10px; }
+.alert-item small.is-blocked { background:#fee4e2;color:#b42318; }
 .alert-item small.is-processing { background:#eaf2ff;color:#175cd3; }
 .alert-item nav { display:flex;justify-content:flex-end;gap:7px;margin-top:11px;padding-top:10px;border-top:1px solid #edf2f8; }
 .alert-item nav a { height:30px;padding:0 11px;border:1px solid #cbdaf0;border-radius:5px;background:#fff;color:#526783;font-size:12px;line-height:28px;text-decoration:none;white-space:nowrap; }
+.alert-item nav button { height:30px;padding:0 11px;border:1px solid #d8e1ed;border-radius:5px;background:#f7f9fc;color:#98a2b3;font-size:12px;cursor:default; }
 .alert-item nav a.primary { border-color:#165dff;background:#165dff;color:#fff; }
 .alert-item nav a:hover { border-color:#8fb7f2;color:#165dff; }
 .alert-item nav a.primary:hover { border-color:#4080ff;background:#4080ff;color:#fff; }
