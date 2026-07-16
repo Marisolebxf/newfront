@@ -196,3 +196,159 @@ export const getReviewPriority = (record: ReviewRecord): { level: ReviewPriority
   if (record.type === '枚举异常') return { ...common, reason: '当前字段无法映射，原始值已保留' }
   return { ...common, reason: '当前异常结果已隔离，未进入下游' }
 }
+
+/** 人工审核处置模板 */
+export type ReviewTemplateId =
+  | 'T_MAP'
+  | 'T_ENTITY'
+  | 'T_RELATION'
+  | 'T_ATTR'
+  | 'T_DQ_FILL'
+  | 'T_DQ_MERGE'
+  | 'T_RUNTIME'
+  | 'T_GENERIC'
+
+export type ReviewAction = {
+  id: string
+  label: string
+  kind: 'primary' | 'secondary' | 'danger'
+  rerun?: boolean
+}
+
+export type ReviewTemplateMeta = {
+  id: ReviewTemplateId
+  title: string
+  question: string
+  actions: ReviewAction[]
+}
+
+const templateCatalog: Record<ReviewTemplateId, ReviewTemplateMeta> = {
+  T_MAP: {
+    id: 'T_MAP',
+    title: '映射修复',
+    question: '源字段应对到哪个 Schema / 字典目标？',
+    actions: [
+      { id: 'save-map-rerun', label: '保存映射并重跑', kind: 'primary', rerun: true },
+      { id: 'rollback-dict', label: '回滚字典并重跑', kind: 'secondary', rerun: true },
+      { id: 'reject-upstream', label: '驳回上游', kind: 'secondary' },
+    ],
+  },
+  T_ENTITY: {
+    id: 'T_ENTITY',
+    title: '实体裁决',
+    question: '候选与存量是否同一实体？类型是否正确？',
+    actions: [
+      { id: 'entity-confirm', label: '确认裁决并重跑', kind: 'primary', rerun: true },
+      { id: 'reject-candidate', label: '驳回候选', kind: 'secondary' },
+    ],
+  },
+  T_RELATION: {
+    id: 'T_RELATION',
+    title: '关系证据',
+    question: '证据是否足以入图？',
+    actions: [
+      { id: 'pass-rerun', label: '证据充分，通过并重跑', kind: 'primary', rerun: true },
+      { id: 'keep-isolated', label: '保持隔离', kind: 'secondary' },
+      { id: 'reject-extract', label: '驳回至抽取节点', kind: 'secondary', rerun: true },
+      { id: 'force-pass', label: '强制通过', kind: 'danger', rerun: true },
+    ],
+  },
+  T_ATTR: {
+    id: 'T_ATTR',
+    title: '属性对照',
+    question: '以哪份来源为准？',
+    actions: [
+      { id: 'confirm-attr', label: '确认属性并重跑', kind: 'primary', rerun: true },
+      { id: 'reject-upstream', label: '驳回上游', kind: 'secondary' },
+    ],
+  },
+  T_DQ_FILL: {
+    id: 'T_DQ_FILL',
+    title: '源数据补全',
+    question: '缺失值怎么补？',
+    actions: [
+      { id: 'save-fill-rerun', label: '保存补全并重跑校验', kind: 'primary', rerun: true },
+      { id: 'discard-record', label: '废弃本记录', kind: 'secondary' },
+      { id: 'reject-upstream', label: '退回上游数据源', kind: 'secondary' },
+    ],
+  },
+  T_DQ_MERGE: {
+    id: 'T_DQ_MERGE',
+    title: '重复定主',
+    question: '哪条是主记录、如何合并？',
+    actions: [
+      { id: 'merge-rerun', label: '指定主记录并合并重跑', kind: 'primary', rerun: true },
+      { id: 'isolate-dup', label: '全部隔离为疑似重复', kind: 'secondary' },
+      { id: 'reject-upstream', label: '驳回上游', kind: 'secondary' },
+    ],
+  },
+  T_RUNTIME: {
+    id: 'T_RUNTIME',
+    title: '运行处置',
+    question: '换配置重跑，还是重试 / 升级？',
+    actions: [
+      { id: 'rerun-batch', label: '更换配置后重跑', kind: 'primary', rerun: true },
+      { id: 'retry-task', label: '重试本任务', kind: 'secondary', rerun: true },
+      { id: 'skip-task', label: '跳过本任务', kind: 'secondary' },
+      { id: 'escalate', label: '暂停并升级治理员', kind: 'danger' },
+    ],
+  },
+  T_GENERIC: {
+    id: 'T_GENERIC',
+    title: '通用兜底',
+    question: '如何临时处置并建议归类？',
+    actions: [
+      { id: 'reject-upstream', label: '驳回上游', kind: 'secondary' },
+      { id: 'escalate', label: '升级治理员', kind: 'secondary' },
+      { id: 'temp-pass', label: '临时放行并重跑', kind: 'danger', rerun: true },
+    ],
+  },
+}
+
+export const getReviewTemplateId = (record: ReviewRecord): ReviewTemplateId => {
+  const { type, node, objectType } = record
+  const isEntityContext = node.includes('对齐') || node.includes('实体') || objectType.includes('实体')
+  const isRelationContext = node.includes('关系') || objectType.includes('关系')
+
+  if (['Schema 批量映射失败', '枚举异常', '公共字典配置异常'].includes(type)) return 'T_MAP'
+  if (['实体冲突', '实体类型错误'].includes(type)) return 'T_ENTITY'
+  if (type === '低置信度' && isEntityContext) return 'T_ENTITY'
+  if (type === '关系证据不足') return 'T_RELATION'
+  if (type === '低置信度' && isRelationContext) return 'T_RELATION'
+  if (type === '属性冲突') return 'T_ATTR'
+  if (type === '必填缺失') return 'T_DQ_FILL'
+  if (type === '唯一性冲突') return 'T_DQ_MERGE'
+  if (type === '单任务执行失败') {
+    if (isEntityContext) return 'T_ENTITY'
+    if (isRelationContext) return 'T_RELATION'
+    return 'T_RUNTIME'
+  }
+  if (type === '模型批量输出异常') return 'T_RUNTIME'
+  return 'T_GENERIC'
+}
+
+export const getReviewTemplate = (record: ReviewRecord): ReviewTemplateMeta => {
+  const id = getReviewTemplateId(record)
+  const meta = templateCatalog[id]
+  if (id === 'T_RUNTIME' && record.type === '单任务执行失败') {
+    return {
+      ...meta,
+      actions: [
+        { id: 'retry-task', label: '重试本任务', kind: 'primary', rerun: true },
+        { id: 'skip-task', label: '跳过本任务', kind: 'secondary' },
+        { id: 'escalate', label: '暂停并升级治理员', kind: 'danger' },
+      ],
+    }
+  }
+  if (id === 'T_MAP' && record.type !== '公共字典配置异常') {
+    return {
+      ...meta,
+      actions: meta.actions.filter((item) => item.id !== 'rollback-dict'),
+    }
+  }
+  return meta
+}
+
+export const getImpactScope = (record: ReviewRecord): '批次级' | '任务级' => (
+  getReviewPriority(record).level === 'P0' ? '批次级' : '任务级'
+)
