@@ -41,13 +41,13 @@ const assistantDragMoved = ref(false)
 let assistantDragOrigin = { pointerX: 0, pointerY: 0, x: 0, y: 0 }
 const assistantQuestion = ref('')
 const assistantMessages = ref<Array<{ role: 'assistant' | 'user'; content: string; sources?: string[] }>>([
-  { role: 'assistant', content: '您好，我是知识图谱助手。您可以询问专家、机构、论文、项目关系，也可以查询平台当前的任务与异常。' },
+  { role: 'assistant', content: '可询问专家、机构、论文关系，或查询任务与异常。' },
 ])
 const alertItems = computed(() => reviewRecords.filter((record) => record.status !== '已完成').map((record) => {
   const priority = getReviewPriority(record)
   return {
     id: record.id,
-    severity: priority.scope,
+    blocked: priority.level === 'P0',
     module: record.module,
     title: `${record.object}：${record.type}`,
     meta: `${record.id} · ${record.node} · ${record.evidence}`,
@@ -58,7 +58,7 @@ const alertItems = computed(() => reviewRecords.filter((record) => record.status
     reviewTo: `/manual-review/task/${record.id}`,
   }
 }))
-const blockedAlertCount = computed(() => alertItems.value.filter((item) => item.severity === '高风险').length)
+const blockedAlertCount = computed(() => alertItems.value.filter((item) => item.blocked).length)
 const serviceNavItems = [
   { to: '/expert-direct', label: '专家直接关系', fullLabel: '科技专家直接关系' },
   { to: '/node-indirect', label: '单节点间接关系', fullLabel: '科技单节点间接关系' },
@@ -230,27 +230,27 @@ onBeforeUnmount(() => {
           </div>
 
           <nav class="app-nav" aria-label="平台功能导航">
-            <div v-if="!appStore.collapsed" class="app-nav__group"><span>工作台</span><em>总览</em></div>
+            <div v-if="!appStore.collapsed" class="app-nav__group"><span>工作台</span></div>
             <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" active-class="app-nav__item--active" to="/overview" :title="appStore.collapsed ? '平台总览' : undefined">
               <img class="app-nav__icon" :src="navOverview" alt="" aria-hidden="true" />
               <span v-if="!appStore.collapsed">平台总览</span>
             </RouterLink>
 
-            <div v-if="!appStore.collapsed" class="app-nav__group"><span>图谱建设与治理</span><em>定义 · 建设 · 处置</em></div>
+            <div v-if="!appStore.collapsed" class="app-nav__group"><span>图谱建设与治理</span></div>
             <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" active-class="app-nav__item--active" to="/schema" :title="appStore.collapsed ? 'Schema 管理' : undefined">
               <img class="app-nav__icon" :src="navSchema" alt="" aria-hidden="true" />
               <span v-if="!appStore.collapsed">Schema 管理</span>
             </RouterLink>
-            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" :class="{ 'app-nav__item--active': activePrimaryNav === 'tasks' }" active-class="app-nav__item--active" to="/tasks" :title="appStore.collapsed ? '任务中心' : undefined">
+            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" :class="{ 'app-nav__item--active': activePrimaryNav === 'tasks' }" active-class="app-nav__item--active" to="/tasks" :title="appStore.collapsed ? '图谱构建' : undefined">
               <img class="app-nav__icon" :src="navTasks" alt="" aria-hidden="true" />
-              <span v-if="!appStore.collapsed">任务中心</span>
+              <span v-if="!appStore.collapsed">图谱构建</span>
             </RouterLink>
             <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" :class="{ 'app-nav__item--active': activePrimaryNav === 'manual-review' }" active-class="app-nav__item--active" to="/manual-review" :title="appStore.collapsed ? '人工处理' : undefined">
               <img class="app-nav__icon" :src="navReview" alt="" aria-hidden="true" />
               <span v-if="!appStore.collapsed">人工处理</span>
             </RouterLink>
 
-            <div v-if="!appStore.collapsed" class="app-nav__group"><span>查询与服务</span><em>验证 · 调用 · 应用</em></div>
+            <div v-if="!appStore.collapsed" class="app-nav__group"><span>查询与服务</span></div>
             <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" active-class="app-nav__item--active" to="/graph-query" :title="appStore.collapsed ? '图谱查询' : undefined">
               <img class="app-nav__icon" :src="navQuery" alt="" aria-hidden="true" />
               <span v-if="!appStore.collapsed">图谱查询</span>
@@ -297,7 +297,7 @@ onBeforeUnmount(() => {
                   <b>{{ alertItems.length }}</b>
                 </button>
                 <aside v-if="alertPreviewOpen" class="alert-preview" aria-label="异常与人工处理概览">
-                  <header><div><strong>异常与人工处理</strong><span>实时更新</span></div><em>点击铃铛查看全部</em></header>
+                  <header><div><strong>异常与人工处理</strong><span>实时更新</span></div></header>
                   <section><article><strong>{{ alertItems.length }}</strong><span>待处理</span></article><article class="danger"><strong>{{ blockedAlertCount }}</strong><span>阻断流程</span></article></section>
                 </aside>
               </div>
@@ -333,14 +333,14 @@ onBeforeUnmount(() => {
           <header><div><h2>异常与人工处理</h2><p>{{ alertItems.length }} 条待处理，与人工审核队列同步</p></div><button type="button" aria-label="关闭" @click="alertDrawerOpen = false">×</button></header>
           <div class="alert-drawer__list">
             <article v-for="item in alertItems" :key="item.id" class="alert-item">
-              <i :class="`is-${item.severity}`"></i>
-              <div><span><b :class="`is-${item.severity}`">{{ item.severity }}</b>{{ item.module }}<em>{{ item.time }}</em></span><strong>{{ item.title }}</strong><p>{{ item.meta }}</p><small>待人工处理</small><nav><template v-if="item.hasReviewDetail"><RouterLink :to="item.detailTo">查看详情</RouterLink><RouterLink class="primary" :to="item.reviewTo">人工处理</RouterLink></template><button v-else type="button" disabled>查看详情</button></nav></div>
+              <i :class="{ 'is-blocked': item.blocked }"></i>
+              <div><span>{{ item.module }}<em>{{ item.time }}</em></span><strong>{{ item.title }}</strong><p>{{ item.meta }}</p><small>待人工处理</small><nav><template v-if="item.hasReviewDetail"><RouterLink :to="item.detailTo">查看详情</RouterLink><RouterLink class="primary" :to="item.reviewTo">人工处理</RouterLink></template><button v-else type="button" disabled>查看详情</button></nav></div>
             </article>
           </div>
           <footer><RouterLink to="/tasks">查看全部任务</RouterLink><RouterLink class="footer-primary" to="/manual-review">查看处理队列 →</RouterLink></footer>
         </aside>
         <aside v-if="assistantOpen" class="knowledge-assistant" :style="assistantPanelStyle" aria-label="知识图谱助手">
-          <header><div><i>AI</i><span><strong>知识图谱助手</strong><em>图谱检索 + 大模型分析</em></span></div><button type="button" aria-label="关闭知识助手" @click="assistantOpen=false">×</button></header>
+          <header><div><i>AI</i><span><strong>知识图谱助手</strong></span></div><button type="button" aria-label="关闭知识助手" @click="assistantOpen=false">×</button></header>
           <div class="knowledge-assistant__messages">
             <article v-for="(message, index) in assistantMessages" :key="index" :class="`is-${message.role}`">
               <p>{{ message.content }}</p>
@@ -764,7 +764,6 @@ onBeforeUnmount(() => {
 .alert-preview>div p { display:grid;grid-template-columns:7px minmax(0,1fr);gap:9px;margin:0;padding:8px 2px;border-bottom:1px solid #edf2f8; }
 .alert-preview>div p:last-child { border-bottom:0; }
 .alert-preview>div p>i { width:7px;height:7px;margin-top:5px;border-radius:50%;background:#f79009; }
-.alert-preview>div p>i.is-高风险 { background:#d92d20; }
 .alert-preview>div p span { display:grid;gap:2px; }
 .alert-preview>div p strong { overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap; }
 .alert-preview>div p em { color:#8592a6;font-size:9px;font-style:normal; }
@@ -782,11 +781,8 @@ onBeforeUnmount(() => {
 .alert-item { display: grid; grid-template-columns: 8px minmax(0,1fr) 14px; gap: 10px; margin-bottom: 8px; padding: 13px 12px; border: 1px solid #dce8f8; border-radius: 8px; background: #fff; color: #263853; text-decoration: none; }
 .alert-item:hover { border-color: #8fb7f2; box-shadow: 0 6px 16px rgba(48,105,194,.09); }
 .alert-item>i { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: #2e90fa; }
-.alert-item>i.is-高风险 { background: #d92d20; box-shadow: 0 0 0 4px #fee4e2; }
-.alert-item>i.is-中风险 { background: #f79009; box-shadow: 0 0 0 4px #fef0c7; }
+.alert-item>i.is-blocked { background: #d92d20; box-shadow: 0 0 0 4px #fee4e2; }
 .alert-item>div>span { display: flex; align-items: center; gap: 7px; color: #77859b; font-size: 11px; }
-.alert-item>div>span b.is-高风险 { color: #d92d20; }
-.alert-item>div>span b.is-中风险 { color: #b54708; }
 .alert-item>div>span em { margin-left: auto; font-style: normal; }
 .alert-item strong { display: block; margin-top: 7px; color: #233550; font-size: 13px; line-height: 20px; }
 .alert-item p { margin: 4px 0 0; color: #73819a; font-size: 11px; }

@@ -24,7 +24,7 @@ const submitRollback = () => {
 
 <template>
   <div :class="['version-page', { 'is-embedded': embedded }]">
-    <header v-if="!embedded" class="version-head"><div><RouterLink to="/overview">← 返回平台总览</RouterLink><h1>图谱版本管理</h1><p>按构建批次发布不可变版本；线上查询始终指向一个已校验的稳定版本。</p></div><span><i />当前线上运行稳定</span></header>
+    <header v-if="!embedded" class="version-head"><div><RouterLink to="/overview">← 返回平台总览</RouterLink><h1>图谱版本管理</h1></div><span><i />当前线上运行稳定</span></header>
 
     <p v-if="actionMessage" class="version-message">{{ actionMessage }}</p>
 
@@ -34,7 +34,7 @@ const submitRollback = () => {
     </section>
 
     <button v-if="selectedVersion || rollbackVersion" class="version-mask" type="button" aria-label="关闭" @click="selectedVersion=null;rollbackVersion=null" />
-    <aside v-if="selectedVersion" class="version-drawer"><header><div><span>图谱版本变更详情</span><h2>{{ selectedVersion.version }}</h2><p>{{ selectedVersion.publishedAt }} · {{ selectedVersion.publisher }}</p></div><button type="button" @click="selectedVersion=null">×</button></header><div><section><h3>本次变更</h3><dl><div><dt>实体变化</dt><dd>{{ selectedVersion.entities }}</dd></div><div><dt>关系变化</dt><dd>{{ selectedVersion.relations }}</dd></div><div><dt>属性变化</dt><dd>{{ selectedVersion.properties }}</dd></div><div><dt>Schema</dt><dd>{{ selectedVersion.schema }}</dd></div></dl></section><section><h3>发布说明</h3><p>{{ selectedVersion.note }}</p></section><section><h3>可恢复依据</h3><p>保留构建输入快照、候选层结果、质量报告和发布前线上版本指针，可用于影响分析和原子回退。</p></section></div></aside>
+    <aside v-if="selectedVersion" class="version-drawer"><header><div><span>图谱版本变更详情</span><h2>{{ selectedVersion.version }}</h2><p>{{ selectedVersion.publishedAt }} · {{ selectedVersion.publisher }}</p></div><button type="button" @click="selectedVersion=null">×</button></header><div><section><h3>本次变更</h3><dl><div><dt>实体变化</dt><dd>{{ selectedVersion.entities }}</dd></div><div><dt>关系变化</dt><dd>{{ selectedVersion.relations }}</dd></div><div><dt>属性变化</dt><dd>{{ selectedVersion.properties }}</dd></div><div><dt>Schema</dt><dd>{{ selectedVersion.schema }}</dd></div></dl></section><section><h3>发布说明</h3><p>{{ selectedVersion.note }}</p></section></div></aside>
 
     <aside v-if="rollbackVersion" class="rollback-dialog"><header><h2>申请回退图谱版本</h2><button type="button" @click="rollbackVersion=null">×</button></header><p>将线上图谱从 {{ current.version }} 切换回 <strong>{{ rollbackVersion.version }}</strong>。提交后不会立即覆盖数据，必须先完成兼容性和影响检查。</p><label><span>回退原因</span><textarea v-model="rollbackReason" /></label><footer><button type="button" @click="rollbackVersion=null">取消</button><button class="danger" type="button" @click="submitRollback">提交回退申请</button></footer></aside>
   </div>

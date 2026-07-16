@@ -218,7 +218,7 @@ watch(taskId, () => {
       <aside class="process-sidebar">
         <header><div><h2>{{ visiblePhase }}流程</h2></div><span>{{ visibleSteps.filter(step => step.status === '成功').length }}/{{ visibleSteps.length }}</span></header>
         <section class="phase-group">
-          <div class="phase-title"><strong>{{ visiblePhase }}</strong><em>重点节点展示实际策略</em></div>
+          <div class="phase-title"><strong>{{ visiblePhase }}</strong></div>
           <button v-for="step in visibleSteps" :key="step.id" type="button" :class="['process-step', `is-${step.status}`, `is-${step.risk}`, { active: selectedStep.id === step.id, 'has-review': step.abnormal !== '0' && step.abnormal !== '-' }]" @click="selectStep(step.id)">
             <i>{{ step.status === '成功' ? '✓' : step.status === '需人工处理' ? '!' : '·' }}</i>
             <span><strong>{{ step.name }}<b v-if="step.id === 'llm'">AI</b><b v-if="step.risk === '高风险'" class="risk">重点</b></strong><em>{{ step.count }}<template v-if="step.abnormal !== '0' && step.abnormal !== '-'"> · {{ step.abnormal }} 异常</template></em></span>

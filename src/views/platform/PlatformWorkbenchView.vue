@@ -638,29 +638,13 @@ watch(activeServiceKey, () => {
   selectedGraphEdgeId.value = null
 })
 
-
 const pageMeta = computed(() => {
-  const map: Record<PlatformTab, { title: string; subtitle: string; statLabel?: string; statValue?: string }> = {
-    overview: {
-      title: '亿级科技知识图谱平台',
-      subtitle: '自动识别科技要素数据变化，完成数据处理与图谱构建，为查询、知识问答和业务服务提供统一知识底座',
-    },
-    processing: {
-      title: '数据处理与结构化输出',
-      subtitle: '从科技要素数据库接入人才、论文、专利、企业等业务数据，完成清洗、质检与可追溯输出',
-    },
-    construction: {
-      title: '图谱构建与治理',
-      subtitle: '基于数据处理后的结构化结果，完成实体对齐、关系验证、属性更新、规则回写与图谱入库',
-    },
-    query: {
-      title: '综合图谱查询',
-      subtitle: '专家、企业、机构、论文、项目和事件在一张图中联动展示',
-    },
-    service: {
-      title: activeService.value.title,
-      subtitle: '按独立业务模块调用底层图谱能力，查看请求、响应与证据结果',
-    },
+  const map: Record<PlatformTab, { title: string }> = {
+    overview: { title: '亿级科技知识图谱平台' },
+    processing: { title: '数据处理与结构化输出' },
+    construction: { title: '图谱构建与治理' },
+    query: { title: '综合图谱查询' },
+    service: { title: activeService.value.title },
   }
   return map[activeTab.value]
 })
@@ -672,7 +656,6 @@ const pageMeta = computed(() => {
     <header v-if="activeTab === 'overview'" class="platform-hero">
       <div class="platform-hero__main">
         <h1>{{ pageMeta.title }}</h1>
-        <p class="platform-hero__subtitle">{{ pageMeta.subtitle }}</p>
       </div>
       <div class="platform-hero__actions"><span><i></i>平台服务正常 · 2 个批次待处理</span><RouterLink to="/tasks?module=图谱版本">当前图谱 KG-2026.07.12.008</RouterLink><RouterLink to="/tasks">查看任务</RouterLink><RouterLink to="/manual-review">进入人工处理</RouterLink></div>
     </header>
@@ -680,7 +663,6 @@ const pageMeta = computed(() => {
     <header v-else class="platform-page-head">
       <div>
         <h1>{{ pageMeta.title }}</h1>
-        <p>{{ pageMeta.subtitle }}</p>
       </div>
     </header>
 
@@ -993,7 +975,6 @@ const pageMeta = computed(() => {
             <div><dt>关系置信度</dt><dd>{{ queryRelationConfidence }}</dd></div>
           </dl>
           <div class="platform-evidence">
-            <strong>操作提示</strong>
             <ul>
               <li>点击实体节点查看实体属性、命中关系与来源信息。</li>
               <li>点击关系线查看两端实体之间的关系类型、置信度与来源说明。</li>

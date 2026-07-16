@@ -51,7 +51,7 @@ export const router = createRouter({
       meta: { title: '图谱查询' },
     },
     { path: '/schema', name: 'schema', component: SchemaBrowserView, meta: { title: '图谱 Schema' } },
-    { path: '/tasks', name: 'tasks', component: TaskCenterView, meta: { title: '任务中心' } },
+    { path: '/tasks', name: 'tasks', component: TaskCenterView, meta: { title: '图谱构建' } },
     { path: '/manual-review', name: 'manual-review', component: OperationsCenterView, props: { mode: 'review' }, meta: { title: '人工处理平台' } },
     { path: '/manual-review/task/:instanceId', name: 'manual-review-detail', component: ManualReviewWorkspaceView, meta: { title: '人工处理详情' } },
     { path: '/user-permissions', redirect: '/overview' },

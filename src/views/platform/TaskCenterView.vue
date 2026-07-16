@@ -75,9 +75,9 @@ const summary = computed(() => {
   const pendingResult = today.filter((item) => !interrupted.includes(item) && item.status === '待人工处理')
   return [
     { label: '今日具体任务', value: String(today.length), hint: `数据处理 ${today.filter(item => item.stage === '数据处理').length} · 图谱构建 ${today.filter(item => item.stage === '图谱构建').length}` },
-    { label: '执行成功', value: String(today.length - interrupted.length), hint: '已运行完成，模型结果才可能有置信度' },
-    { label: '执行中断', value: String(interrupted.length), hint: '未产生结果，因此无置信度' },
-    { label: '结果待确认', value: String(pendingResult.length), hint: '已执行完成，但结果需人工确认' },
+    { label: '执行成功', value: String(today.length - interrupted.length), hint: '' },
+    { label: '执行中断', value: String(interrupted.length), hint: '' },
+    { label: '结果待确认', value: String(pendingResult.length), hint: '' },
   ]
 })
 
@@ -128,7 +128,6 @@ watch(() => route.query.module, (value) => {
 
 <template>
   <div class="task-center">
-    <header><div><h1>任务中心</h1></div></header>
     <section class="auto-update-monitor" aria-label="图谱自动更新策略与最近变化">
       <header><div class="monitor-statuses"><span><i></i><strong>数据库连接正常</strong></span></div><em>最近健康检查 10:42 · 最近更新完成 02:18</em></header>
       <div class="auto-update-body">
@@ -138,7 +137,7 @@ watch(() => route.query.module, (value) => {
       </div>
     </section>
     <p v-if="updateNotice" class="update-feedback">{{ updateNotice }}</p>
-    <section class="task-summary"><article v-for="item in summary" :key="item.label"><span>{{ item.label }}</span><strong>{{ item.value }}</strong><em>{{ item.hint }}</em></article></section>
+    <section class="task-summary"><article v-for="item in summary" :key="item.label"><span>{{ item.label }}</span><strong>{{ item.value }}</strong><em v-if="item.hint">{{ item.hint }}</em></article></section>
     <nav class="task-categories task-center-primary-tabs" aria-label="任务中心分类">
       <button v-for="item in taskCategories" :key="item.value" type="button" :class="{ active: moduleFilter === item.value }" @click="selectCategory(item.value)">{{ item.label }}<em>{{ item.count }}</em></button>
     </nav>
@@ -167,7 +166,7 @@ watch(() => route.query.module, (value) => {
     <button v-if="scheduleDialogOpen" class="task-update-mask" type="button" aria-label="关闭更新时间设置" @click="scheduleDialogOpen=false" />
     <aside v-if="scheduleDialogOpen" class="schedule-dialog">
       <header><div><span>自动更新策略</span><h2>设置检测与更新时间</h2></div><button type="button" @click="scheduleDialogOpen=false">×</button></header>
-      <div><label><span>更新频率</span><select v-model="scheduleFrequency"><option>每天</option><option>每12小时</option><option>每6小时</option><option>每周</option></select></label><label><span>执行时间</span><input v-model="scheduleTime" type="time" /></label><section><strong>执行规则</strong><p>到达设定时间后按更新时间水位检测数据库；发现新增、修改或删除时创建一个数据更新批次，并为具体实体和关系生成处理实例。未发现变化则不创建批次。</p></section><section class="permission-note"><strong>紧急更新</strong><p>有“图谱更新管理”权限的用户可在任务中心点击“立即检测并更新”，无需等待下一个定时时间。</p></section></div>
+      <div><label><span>更新频率</span><select v-model="scheduleFrequency"><option>每天</option><option>每12小时</option><option>每6小时</option><option>每周</option></select></label><label><span>执行时间</span><input v-model="scheduleTime" type="time" /></label></div>
       <footer><button type="button" @click="scheduleDialogOpen=false">取消</button><button class="primary" type="button" @click="saveUpdateSchedule">保存策略</button></footer>
     </aside>
 

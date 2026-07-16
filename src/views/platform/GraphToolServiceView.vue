@@ -22,7 +22,7 @@ function selectFile(event: Event) {
 <template>
   <div class="knowledge-query">
     <header class="query-head">
-      <div><h1>图谱知识检索</h1><p>以知识图谱作为可信知识库，输入一句话或一段分析需求，返回分析答案、核心事实和可追溯证据。</p></div>
+      <div><h1>图谱知识检索</h1></div>
     </header>
 
     <section class="query-composer">

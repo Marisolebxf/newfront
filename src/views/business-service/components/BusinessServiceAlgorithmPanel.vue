@@ -163,7 +163,6 @@ function handleSelectGraphEdge(edge: GraphEdgeData) {
     <div class="service-console__head">
       <div>
         <h2>{{ moduleInfo.title }}</h2>
-        <p>{{ moduleInfo.subtitle }}</p>
       </div>
       <img class="field-info-icon" :src="iconInfo" alt="" aria-hidden="true" />
     </div>
