@@ -366,9 +366,9 @@ const latestChanges = [
 ]
 
 const managementRisks = [
-  { level: '高风险', title: '大模型抽取流程已阻断', detail: 'PI-20260714-0101 · 326 条受影响 · 张建图', detailTo: '/processing-instance/PI-20260714-0101', reviewTo: '/manual-review/task/PI-20260714-0101' },
-  { level: '高风险', title: 'Schema 批量映射失败', detail: 'PI-20260714-0102 · 1,284 条任务受影响 · 张建图', detailTo: '/processing-instance/PI-20260714-0102', reviewTo: '/manual-review/task/PI-20260714-0102' },
-  { level: '中风险', title: '张明远候选实体存在冲突', detail: 'PI-20260714-0004 · 实体对齐 · 王审核', detailTo: '/processing-instance/PI-20260714-0004', reviewTo: '/manual-review/task/PI-20260714-0004' },
+  { title: '大模型抽取流程已阻断', detail: 'PI-20260714-0101 · 326 条受影响 · 张建图', detailTo: '/processing-instance/PI-20260714-0101', reviewTo: '/manual-review/task/PI-20260714-0101' },
+  { title: 'Schema 批量映射失败', detail: 'PI-20260714-0102 · 1,284 条任务受影响 · 张建图', detailTo: '/processing-instance/PI-20260714-0102', reviewTo: '/manual-review/task/PI-20260714-0102' },
+  { title: '张明远候选实体存在冲突', detail: 'PI-20260714-0004 · 实体对齐 · 王审核', detailTo: '/processing-instance/PI-20260714-0004', reviewTo: '/manual-review/task/PI-20260714-0004' },
 ]
 
 
@@ -682,7 +682,7 @@ const pageMeta = computed(() => {
 
         <aside class="kg-panel platform-risk-panel">
           <div class="kg-panel__header"><div><h2 class="kg-panel__title">需要人工审核的任务</h2></div><RouterLink to="/manual-review">查看处理队列 →</RouterLink></div>
-          <div class="platform-risk-list"><article v-for="item in managementRisks" :key="item.title" :class="`is-${item.level}`"><i /><div><span><b>{{ item.level }}</b></span><strong>{{ item.title }}</strong><p>{{ item.detail }}</p><nav><RouterLink :to="item.detailTo">查看详情</RouterLink><RouterLink class="primary" :to="item.reviewTo">人工处理</RouterLink></nav></div></article></div>
+          <div class="platform-risk-list"><article v-for="item in managementRisks" :key="item.title"><i /><div><strong>{{ item.title }}</strong><p>{{ item.detail }}</p><nav><RouterLink :to="item.detailTo">查看详情</RouterLink><RouterLink class="primary" :to="item.reviewTo">人工处理</RouterLink></nav></div></article></div>
         </aside>
       </section>
 
@@ -1471,10 +1471,10 @@ print(response.json())</pre>
 .platform-change-body>aside article>span { display:grid;gap:3px; }.platform-change-body>aside article strong { color:#344661;font-size:10px; }.platform-change-body>aside article em { color:#7b899e;font-size:9px;font-style:normal; }
 
 .platform-risk-list { display:grid; }.platform-risk-list article { position:relative;display:grid;grid-template-columns:9px minmax(0,1fr);gap:10px;min-height:88px;padding:14px;border-bottom:1px solid #e3ebf6;background:#fff; }.platform-risk-list article:last-child { border-bottom:0; }
-.platform-risk-list article>i { width:8px;height:8px;margin-top:5px;border-radius:50%;background:#f79009;box-shadow:0 0 0 4px #fef0c7; }.platform-risk-list article.is-严重>i { background:#d92d20;box-shadow:0 0 0 4px #fee4e2; }
-.platform-risk-list article>div { display:grid;grid-template-columns:1fr auto;gap:3px 8px; }.platform-risk-list article span { grid-column:1/3; }.platform-risk-list article span b { padding:2px 6px;border-radius:99px;background:#fff3df;color:#b54708;font-size:8px; }.platform-risk-list article.is-严重 span b { background:#fee4e2;color:#b42318; }
-.platform-risk-list article strong { grid-column:1/3;color:#253752;font-size:11px; }.platform-risk-list article p { grid-column:1/3;margin:0;color:#7b899e;font-size:9px;line-height:15px; }
-.platform-risk-list article nav { grid-column:1/3;display:flex;justify-content:flex-end;gap:8px;margin-top:7px; }
+.platform-risk-list article>i { width:8px;height:8px;margin-top:5px;border-radius:50%;background:#f79009;box-shadow:0 0 0 4px #fef0c7; }
+.platform-risk-list article>div { display:grid;gap:3px; }
+.platform-risk-list article strong { color:#253752;font-size:11px; }.platform-risk-list article p { margin:0;color:#7b899e;font-size:9px;line-height:15px; }
+.platform-risk-list article nav { display:flex;justify-content:flex-end;gap:8px;margin-top:7px; }
 .platform-risk-list article a { display:inline-flex;align-items:center;height:28px;padding:0 9px;border:1px solid #cbdaf0;border-radius:5px;background:#fff;color:#165dff;font-size:11px;text-decoration:none;white-space:nowrap; }
 .platform-risk-list article a.primary { border-color:#165dff;background:#165dff;color:#fff; }
 
@@ -4174,5 +4174,4 @@ print(response.json())</pre>
 .asset-change-table{min-height:0;overflow:auto;padding:0 14px 14px}.asset-change-table table{width:100%;border-collapse:collapse;border:1px solid #dce8f8;background:#fff;font-size:12px}.asset-change-table th,.asset-change-table td{height:48px;padding:10px 12px;border-bottom:1px solid #e3ebf6;text-align:left}.asset-change-table th{position:sticky;top:0;background:#f3f7fc;color:#62728a}.asset-change-table td{color:#344861}.asset-change-table code{color:#165dff;font-family:inherit}
 .asset-change-drawer>footer{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-top:1px solid #dce8f8;background:#fff}.asset-change-drawer>footer span{color:#718098;font-size:11px}.asset-change-drawer>footer a{height:32px;padding:0 12px;border-radius:5px;background:#165dff;color:#fff;font-size:11px;line-height:32px;text-decoration:none}
 @media(max-width:760px){.asset-change-drawer{width:94vw}.asset-change-table table{min-width:700px}}
-.platform-risk-list article.is-高风险>i{background:#d92d20;box-shadow:0 0 0 4px #fee4e2}.platform-risk-list article.is-高风险 span b{background:#fee4e2;color:#b42318}.platform-risk-list article.is-中风险>i{background:#f79009;box-shadow:0 0 0 4px #fef0c7}.platform-risk-list article.is-中风险 span b{background:#fff3df;color:#b54708}
 </style>
