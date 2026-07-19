@@ -72,7 +72,7 @@ function nodeClass(node: GraphNodeData) {
 }
 
 function nodeRadius(node: GraphNodeData) {
-  return node.nodeType === 'main' ? 16 : Math.min(node.radius ?? 12, 13)
+  return node.nodeType === 'main' ? 24 : Math.min(node.radius ?? 18, 19)
 }
 
 function nodeShape(_node: GraphNodeData) {
@@ -102,7 +102,32 @@ function getLineCoords(edge: GraphEdgeData) {
   const from = getNodeById(edge.from)
   const to = getNodeById(edge.to)
   if (!from || !to) return null
-  return { x1: from.x, y1: from.y, x2: to.x, y2: to.y }
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const distance = Math.hypot(dx, dy) || 1
+  const unitX = dx / distance
+  const unitY = dy / distance
+  const sourceOffset = nodeRadius(from) + 3
+  const targetOffset = nodeRadius(to) + 7
+  return {
+    x1: from.x + unitX * sourceOffset,
+    y1: from.y + unitY * sourceOffset,
+    x2: to.x - unitX * targetOffset,
+    y2: to.y - unitY * targetOffset,
+  }
+}
+
+function getEdgeLabelCoords(edge: GraphEdgeData) {
+  const coords = getLineCoords(edge)
+  if (!coords) return null
+  return {
+    x: (coords.x1 + coords.x2) / 2,
+    y: (coords.y1 + coords.y2) / 2,
+  }
+}
+
+function edgeLabelWidth(edge: GraphEdgeData) {
+  return Math.min(104, Math.max(48, Array.from(edge.label).length * 11 + 16))
 }
 
 function handleWheel(event: WheelEvent) {
@@ -201,6 +226,7 @@ onUnmounted(() => {
             :y1="getLineCoords(edge)!.y1"
             :x2="getLineCoords(edge)!.x2"
             :y2="getLineCoords(edge)!.y2"
+            marker-end="url(#graph-arrow)"
             @click.stop="handleEdgeClick(edge)"
           />
           <line
@@ -212,6 +238,16 @@ onUnmounted(() => {
             :y2="getLineCoords(edge)!.y2"
             @click.stop="handleEdgeClick(edge)"
           />
+          <g
+            v-if="getEdgeLabelCoords(edge)"
+            class="platform-edge-label"
+            :class="{ 'is-selected': selectedEdgeId === edge.id, 'is-dimmed': !isEdgeActive(edge) }"
+            :transform="`translate(${getEdgeLabelCoords(edge)!.x} ${getEdgeLabelCoords(edge)!.y})`"
+            @click.stop="handleEdgeClick(edge)"
+          >
+            <rect :x="-edgeLabelWidth(edge) / 2" y="-10" :width="edgeLabelWidth(edge)" height="20" rx="10" />
+            <text y="1">{{ edge.label }}</text>
+          </g>
         </template>
         <g
           v-for="node in nodes"
@@ -220,6 +256,7 @@ onUnmounted(() => {
           :transform="`translate(${node.x} ${node.y})`"
           @click.stop="handleNodeClick(node)"
         >
+          <title>{{ node.label }}｜{{ node.entityType }}｜{{ node.relations }}</title>
           <circle v-if="nodeShape(node) === 'circle'" class="node-shape" :r="nodeRadius(node)" />
           <rect
             v-else-if="nodeShape(node) === 'rect'"
@@ -311,7 +348,7 @@ onUnmounted(() => {
 
 .platform-network-line {
   stroke: rgba(100, 116, 139, 0.52);
-  stroke-width: 1.1;
+  stroke-width: 1.5;
   cursor: pointer;
 }
 
@@ -338,6 +375,39 @@ onUnmounted(() => {
   stroke-width: 18;
   cursor: pointer;
   pointer-events: stroke;
+}
+
+.platform-edge-label {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.platform-edge-label rect {
+  fill: rgba(255, 255, 255, 0.94);
+  stroke: #d5e2f4;
+  stroke-width: 1;
+}
+
+.platform-edge-label text {
+  fill: #536987;
+  font-size: 10px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+.platform-edge-label.is-selected rect {
+  fill: #eaf2ff;
+  stroke: #165dff;
+}
+
+.platform-edge-label.is-selected text {
+  fill: #165dff;
+}
+
+.platform-edge-label.is-dimmed {
+  opacity: 0.18;
 }
 
 .platform-node {
@@ -386,11 +456,11 @@ onUnmounted(() => {
   fill: #10264c;
   font-size: 11px;
   font-weight: 600;
-  transform: translateY(18px);
+  transform: translateY(28px);
   stroke: rgba(255, 255, 255, 0.94);
 }
 
 .platform-node:not(.platform-node--main):not(.is-main) text {
-  transform: translateY(16px);
+  transform: translateY(22px);
 }
 </style>

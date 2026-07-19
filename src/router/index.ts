@@ -6,7 +6,6 @@ import OperationsCenterView from '../views/platform/OperationsCenterView.vue'
 import ManualReviewWorkspaceView from '../views/platform/ManualReviewWorkspaceView.vue'
 import ProcessInstanceDetailView from '../views/platform/ProcessInstanceDetailView.vue'
 import TaskCenterView from '../views/platform/TaskCenterView.vue'
-import GraphToolServiceView from '../views/platform/GraphToolServiceView.vue'
 import SchemaBrowserView from '../views/platform/SchemaBrowserView.vue'
 
 const serviceRoutes = [
@@ -43,13 +42,13 @@ export const router = createRouter({
       path: '/graph-construction',
       redirect: { path: '/tasks', query: { module: '图谱构建' } },
     },
-    // {
-    //   path: '/graph-query',
-    //   name: 'graph-query',
-    //   component: PlatformWorkbenchView,
-    //   props: { initialTab: 'query' },
-    //   meta: { title: '图谱查询' },
-    // },
+    {
+      path: '/graph-query',
+      name: 'graph-query',
+      component: PlatformWorkbenchView,
+      props: { initialTab: 'query' },
+      meta: { title: '图谱查询' },
+    },
     { path: '/schema', name: 'schema', component: SchemaBrowserView, meta: { title: '图谱 Schema' } },
     { path: '/tasks', name: 'tasks', component: TaskCenterView, meta: { title: '图谱构建' } },
     { path: '/manual-review', name: 'manual-review', component: OperationsCenterView, props: { mode: 'review' }, meta: { title: '人工处理平台' } },
@@ -62,7 +61,6 @@ export const router = createRouter({
       path: '/business-service',
       redirect: '/expert-direct',
     },
-    { path: '/graph-tools', name: 'graph-tools', component: GraphToolServiceView, meta: { title: '知识检索问答' } },
     ...serviceRoutes.map((route) => ({
       path: route.path,
       name: route.name,

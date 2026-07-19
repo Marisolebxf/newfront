@@ -5,8 +5,7 @@ import { RouterView, useRoute } from 'vue-router'
 import iconMenuCollapse from '../assets/icons/icon-menu-collapse.svg'
 import iconSidebarArrow from '../assets/icons/icon-sidebar-arrow.svg'
 import navOverview from '../assets/icons/nav-overview.svg'
-// import navQuery from '../assets/icons/nav-query.svg'
-import navRetrieval from '../assets/icons/nav-retrieval.svg'
+import navQuery from '../assets/icons/nav-query.svg'
 import navReview from '../assets/icons/nav-review.svg'
 import navSchema from '../assets/icons/nav-schema.svg'
 import navServices from '../assets/icons/nav-services.svg'
@@ -255,15 +254,9 @@ onBeforeUnmount(() => {
             </RouterLink>
 
             <div v-if="!appStore.collapsed" class="app-nav__group"><span>查询与服务</span></div>
-            <!-- 图谱查询（自然语言图谱检索）入口（已隐藏）
             <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" active-class="app-nav__item--active" to="/graph-query" :title="appStore.collapsed ? '图谱查询' : undefined">
               <img class="app-nav__icon" :src="navQuery" alt="" aria-hidden="true" />
               <span v-if="!appStore.collapsed">图谱查询</span>
-            </RouterLink>
-            -->
-            <RouterLink class="app-nav__item app-nav__item--top app-nav__item--leaf" active-class="app-nav__item--active" to="/graph-tools" :title="appStore.collapsed ? '知识检索问答' : undefined">
-              <img class="app-nav__icon" :src="navRetrieval" alt="" aria-hidden="true" />
-              <span v-if="!appStore.collapsed">知识检索问答</span>
             </RouterLink>
             <button
               class="app-nav__item app-nav__item--top app-nav__item--button"

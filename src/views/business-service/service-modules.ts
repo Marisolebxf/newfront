@@ -11,6 +11,11 @@ export type ServiceResultRow = {
   tone?: 'blue' | 'green' | 'orange' | 'purple'
 }
 
+export type ServiceSummaryRow = {
+  label: string
+  value: string
+}
+
 export type ServiceRule = {
   name: string
   type: string
@@ -34,6 +39,7 @@ export type ServiceModule = {
   requestExample: Record<string, string | number | boolean | string[]>
   responseExample: Record<string, unknown>
   resultRows: ServiceResultRow[]
+  summaryRows: ServiceSummaryRow[]
   evidence: string[]
   rules: ServiceRule[]
 }
@@ -68,6 +74,17 @@ export const serviceModules: ServiceModule[] = [
       { label: '关系类型', value: '4', tone: 'green' },
       { label: '关联成果', value: '18', tone: 'orange' },
       { label: '最高置信度', value: '0.94', tone: 'purple' },
+    ],
+    summaryRows: [
+      { label: '专家 A', value: '张明远｜研究员｜清华大学' },
+      { label: '专家 B', value: '李佳宁｜副研究员｜清华大学' },
+      { label: '直接关系类型', value: '论文合作、项目合作、同事协作、成果转化' },
+      { label: '关系发生时间', value: '2020-01 至今' },
+      { label: '交互场景', value: '科研合作、联合项目、学术交流' },
+      { label: '关系数量', value: '12 条' },
+      { label: '相关成果', value: '共同论文 8 篇、联合项目 3 项、授权专利 2 件' },
+      { label: '代表成果', value: '科技知识图谱关系推理方法、科研合作网络分析系统' },
+      { label: '关系置信度', value: '0.94' },
     ],
     evidence: ['共同发表论文 4 篇，作者列表和单位信息一致。', '共同参与项目 3 项，项目角色存在协作链路。', '关系发生时间、场景和成果均已结构化记录。'],
     rules: [
@@ -125,6 +142,17 @@ export const serviceModules: ServiceModule[] = [
       { label: '关系类型', value: '4', tone: 'orange' },
       { label: '平均强度', value: '0.76', tone: 'purple' },
     ],
+    summaryRows: [
+      { label: '核心节点', value: '张明远｜科技专家' },
+      { label: '路径分析深度', value: '2 跳' },
+      { label: '直接关联节点', value: '李佳宁、清华大学、智能科研协同平台项目' },
+      { label: '间接关联节点', value: '专家陈思远、华南智能芯片、知识工程实验室等 36 个' },
+      { label: '间接关系类型', value: '学术关联、项目关联、专利关联、机构关联' },
+      { label: '代表传递路径', value: '张明远 → 李佳宁 → 陈思远' },
+      { label: '项目关联路径', value: '张明远 → 智能科研协同平台项目 → 华南智能芯片' },
+      { label: '路径数量', value: '58 条' },
+      { label: '关联强度', value: '最高 0.89｜平均 0.76｜阈值 0.65' },
+    ],
     evidence: ['路径：张明远 -> 李佳宁 -> 专家C。', '路径深度为 2，命中学术关联和机构关联。', '每条间接关系均返回传递路径和强度。'],
     rules: [
       {
@@ -180,6 +208,20 @@ export const serviceModules: ServiceModule[] = [
       { label: '合作专利', value: '3', tone: 'green' },
       { label: '共同项目', value: '2', tone: 'orange' },
       { label: '价值评分', value: '91', tone: 'purple' },
+    ],
+    summaryRows: [
+      { label: '专家 A', value: '陈建国｜清华大学' },
+      { label: '专家 B', value: '刘芳｜北京大学' },
+      { label: '合作成果类型', value: '论文、项目、专利' },
+      { label: '合作时间', value: '2020—2025' },
+      { label: '共同领域', value: '知识图谱、智能计算、图神经网络、科技情报' },
+      { label: '成果总量', value: '17 项' },
+      { label: '成果分布', value: '论文 10 篇、项目 4 项、专利 3 件' },
+      { label: '代表成果', value: '关系推理方法研究、科研合作网络分析系统' },
+      { label: '成果级别与评价', value: '国家级项目 2 项、JCR Q1 论文 5 篇、授权专利 3 件' },
+      { label: '核心贡献', value: '重点项目攻关、高水平论文产出、科研成果转化' },
+      { label: '合作模式', value: '长期稳定型科研合作' },
+      { label: '合作价值评分', value: '91' },
     ],
     evidence: ['按论文、专利、项目分类统计合作成果。', '标注完成时间、所属领域和奖项评价。', '输出核心贡献和合作模式。'],
     rules: [
@@ -237,6 +279,19 @@ export const serviceModules: ServiceModule[] = [
       { label: '重叠年限', value: '4', tone: 'orange' },
       { label: '期间成果', value: '6', tone: 'purple' },
     ],
+    summaryRows: [
+      { label: '核心专家', value: '张明远｜研究员' },
+      { label: '核心专家机构', value: '中国科学院自动化研究所｜智能系统实验室' },
+      { label: '同事专家', value: '李佳宁｜副研究员' },
+      { label: '共同机构', value: '中国科学院自动化研究所' },
+      { label: '所属部门/团队', value: '智能系统实验室｜知识工程项目组' },
+      { label: '关系生效时段', value: '2018-01 至 2022-12' },
+      { label: '任职重叠时间', value: '4 年' },
+      { label: '共同工作内容', value: '科技知识图谱构建、关系推理与系统研发' },
+      { label: '协作场景', value: '同一实验室科研协作、联合项目攻关' },
+      { label: '同事期间成果', value: '论文 3 篇、项目 2 项、技术报告 1 份' },
+      { label: '同事关系数量', value: '18 人' },
+    ],
     evidence: ['任职时间存在重叠，机构层级匹配到同一实验室。', '标注共同工作内容和协作场景。', '关联同事期间产生的合作成果。'],
     rules: [
       {
@@ -292,6 +347,19 @@ export const serviceModules: ServiceModule[] = [
       { label: '关系维度', value: '3', tone: 'green' },
       { label: '学术互动', value: '9', tone: 'orange' },
       { label: '最高置信度', value: '0.89', tone: 'purple' },
+    ],
+    summaryRows: [
+      { label: '专家 A', value: '张明远｜博士' },
+      { label: '专家 B', value: '王青｜博士' },
+      { label: '关联院校', value: '北京大学' },
+      { label: '院系/专业', value: '信息科学技术学院｜计算机科学与技术' },
+      { label: '教育阶段', value: '博士研究生' },
+      { label: '在校时间', value: '2008—2013' },
+      { label: '校友关系维度', value: '同校、同院系、同专业' },
+      { label: '校友关系类型', value: '同期同院系校友' },
+      { label: '后续学术互动', value: '共同论文 4 篇、联合项目 2 项、学术会议 3 次' },
+      { label: '关联成果', value: '智能计算联合研究、知识图谱学术交流项目' },
+      { label: '关系置信度', value: '0.89' },
     ],
     evidence: ['基于教育经历匹配校友关系。', '细分同校、同院系、同导师等关联维度。', '关联后续学术交流与合作互动。'],
     rules: [
@@ -349,6 +417,20 @@ export const serviceModules: ServiceModule[] = [
       { label: '研究方向', value: '5', tone: 'orange' },
       { label: '核心人员', value: '7', tone: 'purple' },
     ],
+    summaryRows: [
+      { label: '核心专家', value: '张明远｜清华大学' },
+      { label: '合作专家', value: '李佳宁｜中国科学院自动化研究所' },
+      { label: '作者单位', value: '清华大学、中国科学院自动化研究所' },
+      { label: '合作发表时间', value: '2019—2025' },
+      { label: '论文主题', value: '人工智能、知识图谱、先进计算、关系推理' },
+      { label: '合作论文数量', value: '14 篇' },
+      { label: '期刊/会议级别', value: 'JCR Q1 论文 5 篇、A 类会议论文 4 篇' },
+      { label: '论文被引情况', value: '总被引 1260 次｜篇均被引 90 次' },
+      { label: '研究方向', value: '知识图谱、图神经网络、智能计算等 5 个方向' },
+      { label: '共同贡献', value: '关系推理模型、图谱构建方法、开源数据集' },
+      { label: '核心合作人员', value: '李佳宁、陈思远、王青等 7 人' },
+      { label: '合作团队特征', value: '长期稳定合作团队' },
+    ],
     evidence: ['提取作者列表、作者单位、发表时间和论文主题。', '统计期刊会议级别和被引情况。', '识别长期稳定合作团队和核心合作人员。'],
     rules: [
       {
@@ -404,6 +486,20 @@ export const serviceModules: ServiceModule[] = [
       { label: '角色类型', value: '4', tone: 'green' },
       { label: '合作领域', value: '6', tone: 'orange' },
       { label: '经营风险', value: '2', tone: 'purple' },
+    ],
+    summaryRows: [
+      { label: '科技专家', value: '张明远｜研究员' },
+      { label: '重点关注企业', value: '华南智能芯片有限公司' },
+      { label: '专家企业角色', value: '技术顾问、联合项目负责人' },
+      { label: '合作时间', value: '2021-03 至今' },
+      { label: '合作领域', value: '芯片设计、智能制造、知识图谱' },
+      { label: '合作模式', value: '技术咨询、联合研发、成果转化' },
+      { label: '行业地位', value: '集成电路设计领域重点科技企业' },
+      { label: '技术方向', value: '智能计算芯片、工业智能化解决方案' },
+      { label: '经营状况', value: '正常经营｜近三年研发投入持续增长' },
+      { label: '关联企业数量', value: '9 家' },
+      { label: '风险提示', value: '2 项待持续关注的经营与供应链风险' },
+      { label: '资源对接价值', value: '专家技术能力与企业研发方向高度匹配' },
     ],
     evidence: ['标注专家在企业中的角色、合作领域、合作时间和模式。', '关联企业行业地位、技术方向与经营状况。', '支持产业界资源对接分析。'],
     rules: [
@@ -461,6 +557,20 @@ export const serviceModules: ServiceModule[] = [
       { label: '关联企业', value: '24', tone: 'orange' },
       { label: '风险等级', value: '中', tone: 'purple' },
     ],
+    summaryRows: [
+      { label: '产业链', value: '集成电路产业链' },
+      { label: '产业链节点', value: '芯片设计' },
+      { label: '筛选范围', value: 'TOP 10｜投融资、政策、技术突破、风险事件' },
+      { label: '重点事件', value: '高性能半导体材料制备关键技术专利授权' },
+      { label: '事件类型/时间', value: '技术突破｜2026-06' },
+      { label: '影响力排名', value: '第 1 名｜影响力评分 92.6' },
+      { label: '关联专家', value: '陈建国、李佳宁等 18 人' },
+      { label: '关联企业', value: '华南智能芯片等 24 家' },
+      { label: '节点影响', value: '推动上游材料工艺升级，并向中游芯片制造环节传导' },
+      { label: '发展趋势', value: '短期热度上升，中期产业化合作持续增长' },
+      { label: '风险预警', value: '供应集中度较高，存在关键材料供应稳定性风险' },
+      { label: '机遇挖掘', value: '关键材料制备技术具备成果转化和产业合作机会' },
+    ],
     evidence: ['按影响力评估筛选产业链节点 TOP-N 事件。', '构建事件与专家、企业、人才的关联关系。', '分析产业链影响和后续发展趋势。'],
     rules: [
       {
@@ -516,6 +626,21 @@ export const serviceModules: ServiceModule[] = [
       { label: '链路关系', value: '420', tone: 'green' },
       { label: '关键技术', value: '22', tone: 'orange' },
       { label: '重点企业', value: '48', tone: 'purple' },
+    ],
+    summaryRows: [
+      { label: '产业链名称', value: '人工智能计算产业链' },
+      { label: '产业链标识', value: 'AI-COMPUTING' },
+      { label: '展开层级', value: '3 级' },
+      { label: '核心环节', value: '上游基础资源、中游核心技术、下游应用场景' },
+      { label: '核心节点', value: '算力芯片、数据资源、知识图谱、大模型、行业应用' },
+      { label: '关联关系', value: '上下游、技术支撑、企业布局、专家支撑、事件影响' },
+      { label: '数据流向', value: '基础资源 → 核心技术 → 行业应用' },
+      { label: '关键技术', value: '算力芯片、向量数据库、知识图谱、大模型等 22 项' },
+      { label: '重点企业', value: '华为昇腾、寒武纪、百度智能云等 48 家' },
+      { label: '核心专家', value: '张明远、李佳宁、陈思远等' },
+      { label: '产业动态事件', value: '智算中心扩容、国产算力适配、多模态模型升级' },
+      { label: '图谱规模', value: '186 个节点｜420 条关系' },
+      { label: '更新状态', value: '已完成最新批次动态更新' },
     ],
     evidence: ['整合产业链实体、关系、事件数据。', '展示核心节点、关联关系和数据流向。', '支持层级展开、关系筛选和动态更新。'],
     rules: [

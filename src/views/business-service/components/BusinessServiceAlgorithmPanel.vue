@@ -15,6 +15,8 @@ const props = defineProps<{
 const resultMode = ref<'summary' | 'entity' | 'relation' | 'provenance' | 'rule' | 'api'>('summary')
 const running = ref(false)
 const lastTestTime = ref('2026-07-23 11:00:00')
+const panoramaLayer = ref(3)
+const panoramaRelation = ref('all')
 const parameterValues = ref<Record<string, string>>({})
 const selectedGraphNodeId = ref<string | null>(null)
 const selectedGraphEdgeId = ref<string | null>(null)
@@ -24,6 +26,44 @@ const graphEdges = computed(() => graphPreset.value.edges.filter((edge) => (
   graphNodes.value.some((node) => node.id === edge.from) &&
   graphNodes.value.some((node) => node.id === edge.to)
 )))
+const isPanorama = computed(() => props.moduleInfo.key === 'industry-chain-panorama')
+const panoramaLayerOptions = [
+  { value: 1, label: '一级 · 产业环节' },
+  { value: 2, label: '二级 · 企业/专家/技术' },
+  { value: 3, label: '三级 · 动态事件' },
+]
+const panoramaRelationOptions = [
+  { value: 'all', label: '全部关系' },
+  { value: 'chain', label: '产业链主干' },
+  { value: 'enterprise', label: '企业布局' },
+  { value: 'expert', label: '专家支撑' },
+  { value: 'technology', label: '技术支撑' },
+  { value: 'event', label: '事件影响' },
+]
+const displayedGraphNodes = computed(() => {
+  if (!isPanorama.value) return graphNodes.value
+  return graphNodes.value.filter((node) => (node.level ?? 1) <= panoramaLayer.value)
+})
+const displayedGraphEdges = computed(() => {
+  const visibleNodeIds = new Set(displayedGraphNodes.value.map((node) => node.id))
+  return graphEdges.value.filter((edge) => {
+    if (!visibleNodeIds.has(edge.from) || !visibleNodeIds.has(edge.to)) return false
+    if (!isPanorama.value || panoramaRelation.value === 'all') return true
+    if (panoramaRelation.value === 'chain') {
+      return ['上游环节', '中游环节', '下游环节', '资源供给', '能力输出'].includes(edge.label)
+    }
+    if (panoramaRelation.value === 'enterprise') return edge.label.includes('企业')
+    if (panoramaRelation.value === 'expert') return edge.label.includes('专家')
+    if (panoramaRelation.value === 'technology') return edge.label.includes('技术')
+    return edge.label.includes('事件')
+  })
+})
+const graphLegendItems = computed(() => Array.from(
+  new Map(displayedGraphNodes.value.map((node) => [node.nodeType, {
+    type: node.nodeType,
+    label: node.entityType,
+  }])).values(),
+))
 const selectedNode = computed(() => (
   selectedGraphNodeId.value
     ? graphNodes.value.find((node) => node.id === selectedGraphNodeId.value) ?? null
@@ -86,18 +126,7 @@ const selectedProvenanceTarget = computed(() => {
   }
 })
 const detailRows = computed(() => {
-  const requestEntries = props.moduleInfo.requestFields.slice(0, 4).map((field) => [
-    field.description,
-    parameterValues.value[field.name] ?? formatValue(props.moduleInfo.requestExample[field.name]),
-  ] as const)
-  const resultEntries = props.moduleInfo.resultRows.map((row) => [row.label, row.value] as const)
-  return [
-    ['子功能名称', props.moduleInfo.title] as const,
-    ['最近测试时间', lastTestTime.value] as const,
-    ...resultEntries,
-    ...requestEntries,
-    ...props.moduleInfo.rules.slice(0, 3).map((rule, index) => [`规则${index + 1}`, rule.name] as const),
-  ]
+  return props.moduleInfo.summaryRows.map((row) => [row.label, row.value] as const)
 })
 const apiResultJson = computed(() => JSON.stringify({
   ...JSON.parse(props.responseJson),
@@ -108,12 +137,21 @@ watch(
   () => props.moduleInfo.key,
   () => {
     resultMode.value = 'summary'
+    panoramaLayer.value = 3
+    panoramaRelation.value = 'all'
     selectedGraphNodeId.value = null
     selectedGraphEdgeId.value = null
     resetParameters()
   },
   { immediate: true },
 )
+
+watch([panoramaLayer, panoramaRelation], () => {
+  if (!isPanorama.value) return
+  selectedGraphNodeId.value = null
+  selectedGraphEdgeId.value = null
+  resultMode.value = 'summary'
+})
 
 function formatValue(value: unknown) {
   if (Array.isArray(value)) return value.join('、')
@@ -136,6 +174,14 @@ function handleRun() {
     lastTestTime.value = '2026-07-23 11:00:00'
     running.value = false
   }, 360)
+}
+
+function resetPanoramaView() {
+  panoramaLayer.value = 3
+  panoramaRelation.value = 'all'
+  selectedGraphNodeId.value = null
+  selectedGraphEdgeId.value = null
+  resultMode.value = 'summary'
 }
 
 function handleParameterInput(fieldName: string, event: Event) {
@@ -191,10 +237,30 @@ function handleSelectGraphEdge(edge: GraphEdgeData) {
           <strong>{{ lastTestTime }}</strong>
         </div>
       </div>
+      <div v-if="isPanorama" class="graph-panel__filters" aria-label="产业链全景图显示控制">
+        <label>
+          <span>层级展开</span>
+          <select v-model.number="panoramaLayer">
+            <option v-for="item in panoramaLayerOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+          </select>
+        </label>
+        <label>
+          <span>关系筛选</span>
+          <select v-model="panoramaRelation">
+            <option v-for="item in panoramaRelationOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+          </select>
+        </label>
+        <button type="button" @click="resetPanoramaView">恢复全景</button>
+      </div>
+      <div class="graph-panel__legend" aria-label="图谱实体类型图例">
+        <span v-for="item in graphLegendItems" :key="item.type" :class="`is-${item.type}`">
+          <i />{{ item.label }}
+        </span>
+      </div>
       <div class="graph-panel__canvas">
         <KgGraphCanvas
-          :nodes="graphNodes"
-          :edges="graphEdges"
+          :nodes="displayedGraphNodes"
+          :edges="displayedGraphEdges"
           :selected-node-id="selectedGraphNodeId"
           :selected-edge-id="selectedGraphEdgeId"
           aria-label="测试结果图谱"
@@ -411,8 +477,79 @@ function handleSelectGraphEdge(edge: GraphEdgeData) {
   font-weight: 400;
 }
 
+.graph-panel__filters {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: #f7faff;
+}
+
+.graph-panel__filters label {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.graph-panel__filters span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.graph-panel__filters select,
+.graph-panel__filters button {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.graph-panel__filters button {
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.graph-panel__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  min-height: 38px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: #fbfdff;
+}
+
+.graph-panel__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.graph-panel__legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #1e8ff3;
+}
+
+.graph-panel__legend .is-org i,
+.graph-panel__legend .is-company i { background: #48c914; }
+.graph-panel__legend .is-paper i { background: #762bd7; }
+.graph-panel__legend .is-project i { background: #ffad17; }
+.graph-panel__legend .is-event i { background: #eb2aa3; }
+.graph-panel__legend .is-topic i { background: #2f6bff; }
+
 .graph-panel__canvas {
-  height: calc(100% - 50px);
+  flex: 1;
+  height: auto;
   min-height: 0;
   overflow: hidden;
 }

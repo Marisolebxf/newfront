@@ -208,7 +208,7 @@ const activeTab = ref<PlatformTab>(props.initialTab ?? 'overview')
 const activeServiceKey = ref(props.initialServiceKey ?? modules[0]?.key ?? '')
 const activeServiceMode = ref<'test' | 'api'>('test')
 const selectedQueryType = ref('全部图谱')
-const queryKeyword = ref('分析张明远近五年的论文合作网络，并展示核心合作专家和机构。')
+const queryKeyword = ref('张明远')
 const queryRelationFilter = ref('全部关系')
 const queryEntityConfidence = ref('>= 0.75')
 const queryRelationConfidence = ref('>= 0.75')
@@ -444,7 +444,7 @@ const selectedQueryScopeDescription = computed(() => (
 
 const querySummary = computed(() => {
   if (!queryApplied.value) return '输入关键词后展示专家、企业、论文、机构、项目和事件的一张综合图'
-  return `${selectedQueryType.value} / ${queryKeyword.value} / ${queryRelationFilter.value}`
+  return `${selectedQueryType.value} / ${queryKeyword.value || '全部实体'} / ${queryRelationFilter.value}`
 })
 
 const queryActiveCategories = computed(() => {
@@ -889,13 +889,13 @@ const pageMeta = computed(() => {
     <main v-else-if="activeTab === 'query'" class="platform-content platform-query">
       <section class="kg-panel platform-query-form">
         <div class="kg-panel__header">
-          <h2 class="kg-panel__title">自然语言图谱检索</h2>
-          <button class="kg-button" type="button" :disabled="isActionLoading" @click="handleQuery">检索子图</button>
+          <h2 class="kg-panel__title">图谱查询条件</h2>
+          <button class="kg-button" type="button" :disabled="isActionLoading" @click="handleQuery">查询图谱</button>
         </div>
         <div class="platform-form-grid">
           <label class="platform-query-question">
-            <span>问题或查询要求</span>
-            <textarea v-model="queryKeyword" rows="2" placeholder="输入一句话或一段查询要求，例如：分析某专家近五年的合作网络。" />
+            <span>实体名称或关键词</span>
+            <input v-model="queryKeyword" type="search" placeholder="请输入实体名称或关键词，例如：张明远" />
           </label>
           <label>
             <span>图谱范围</span>
