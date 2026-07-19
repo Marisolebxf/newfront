@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import GraphVersionView from './GraphVersionView.vue'
+// import GraphVersionView from './GraphVersionView.vue'
 import { getUpdateBatch, processingInstances, updateBatches } from './update-batch-data'
 
 const route = useRoute()
 const router = useRouter()
-const initialModule = ['数据处理', '图谱构建', '图谱版本'].includes(String(route.query.module)) ? String(route.query.module) : '数据处理'
+const initialModule = ['数据处理', '图谱构建'].includes(String(route.query.module)) ? String(route.query.module) : '数据处理'
 const moduleFilter = ref(initialModule)
 const statusFilter = ref(String(route.query.status || '全部执行状态'))
 const batchFilter = ref(String(route.query.batch || '全部更新批次'))
@@ -94,7 +94,7 @@ const filteredRows = computed(() => taskRows.value.filter((row) => (
 const taskCategories = computed(() => [
   { label: '数据处理', value: '数据处理', count: processingInstances.filter((item) => item.stage === '数据处理').length },
   { label: '图谱构建', value: '图谱构建', count: processingInstances.filter((item) => item.stage === '图谱构建').length },
-  { label: '图谱版本', value: '图谱版本', count: 3 },
+  // { label: '图谱版本', value: '图谱版本', count: 3 },
 ])
 
 function selectCategory(value: string) {
@@ -121,7 +121,7 @@ function runImmediateUpdate() {
 watch(() => route.query.status, (value) => { statusFilter.value = String(value || '全部执行状态') })
 watch(() => route.query.batch, (value) => { batchFilter.value = String(value || '全部更新批次') })
 watch(() => route.query.module, (value) => {
-  moduleFilter.value = ['数据处理', '图谱构建', '图谱版本'].includes(String(value)) ? String(value) : '数据处理'
+  moduleFilter.value = ['数据处理', '图谱构建'].includes(String(value)) ? String(value) : '数据处理'
   scopeFilter.value = moduleFilter.value === '数据处理' ? '全部数据域' : '全部图谱对象'
 })
 </script>
@@ -141,11 +141,11 @@ watch(() => route.query.module, (value) => {
     <nav class="task-categories task-center-primary-tabs" aria-label="任务中心分类">
       <button v-for="item in taskCategories" :key="item.value" type="button" :class="{ active: moduleFilter === item.value }" @click="selectCategory(item.value)">{{ item.label }}<em>{{ item.count }}</em></button>
     </nav>
-    <section v-if="moduleFilter !== '图谱版本'" class="task-panel">
+    <section class="task-panel">
       <div class="task-filter"><input v-model="keyword" placeholder="搜索任务 ID、处理对象、来源表或规则" /><select v-model="batchFilter"><option>全部更新批次</option><option v-for="item in updateBatches" :key="item.id" :value="item.id">{{ item.name }}</option></select><select v-if="activeStage === '数据处理'" v-model="scopeFilter"><option>全部数据域</option><option>论文域</option><option>人才域</option><option>机构域</option><option>企业域</option><option>综合数据域</option></select><select v-else v-model="scopeFilter"><option>全部图谱对象</option><option>实体</option><option>关系</option><option>属性</option></select><select v-model="statusFilter"><option>全部执行状态</option><option>执行成功</option><option>执行中断</option></select><span>{{ filteredRows.length }} 个具体任务</span></div>
       <div class="task-table"><table><thead><tr><th>任务 ID</th><th>处理对象</th><th>{{ activeStage === '数据处理' ? '数据域 / 处理动作' : '图谱对象 / 处理动作' }}</th><th>当前节点</th><th>执行状态</th><th>模型结果置信度</th><th>处理时间</th><th>操作</th></tr></thead><tbody><tr v-for="row in filteredRows" :key="row.id" tabindex="0" @click="openTask(row)" @keydown.enter="openTask(row)"><td><code>{{ row.id }}</code><small>{{ row.batchId }}</small></td><td><strong>{{ row.objectName }}</strong><small>{{ row.objectId }}</small></td><td>{{ activeStage === '数据处理' ? row.dataDomain : `${row.kind} · ${row.objectType}` }}<small>{{ row.action }} · {{ row.sourceTable }}</small></td><td>{{ row.currentStep }}</td><td><span :class="row.executionStatus === '执行成功' ? 'execution-success' : 'execution-interrupted'">{{ row.executionStatus }}</span><small>{{ row.executionHint }}</small></td><td><strong :class="{ 'danger-text': row.confidenceDisplay !== '—' && Number(row.confidence) < 0.9 }">{{ row.confidenceDisplay }}</strong><small>{{ row.confidenceHint }}</small></td><td>{{ row.processedAt }}</td><td><button type="button" @click.stop="openTask(row)">查看结果与日志 →</button></td></tr><tr v-if="!filteredRows.length"><td class="empty-row" colspan="8">暂无符合条件的具体任务</td></tr></tbody></table></div>
     </section>
-    <GraphVersionView v-else embedded />
+    <!-- <GraphVersionView v-else embedded /> -->
 
     <button v-if="changeDrawerOpen" class="task-update-mask" type="button" aria-label="关闭变更明细" @click="changeDrawerOpen=false" />
     <aside v-if="changeDrawerOpen" class="change-drawer">

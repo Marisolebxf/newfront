@@ -657,7 +657,7 @@ const pageMeta = computed(() => {
       <div class="platform-hero__main">
         <h1>{{ pageMeta.title }}</h1>
       </div>
-      <div class="platform-hero__actions"><span><i></i>平台服务正常 · 2 个批次待处理</span><RouterLink to="/tasks?module=图谱版本">当前图谱 KG-2026.07.12.008</RouterLink><RouterLink to="/tasks">查看任务</RouterLink><RouterLink to="/manual-review">进入人工处理</RouterLink></div>
+      <div class="platform-hero__actions"><span><i></i>平台服务正常 · 2 个批次待处理</span><!-- <RouterLink to="/tasks?module=图谱版本">当前图谱 KG-2026.07.12.008</RouterLink> --><RouterLink to="/tasks">查看任务</RouterLink><RouterLink to="/manual-review">进入人工处理</RouterLink></div>
     </header>
 
     <header v-else class="platform-page-head">
@@ -867,7 +867,7 @@ const pageMeta = computed(() => {
       <section class="kg-panel platform-schema-readonly">
         <div class="kg-panel__header">
           <h2 class="kg-panel__title">当前 Schema 摘要（只读）</h2>
-          <div class="platform-schema-head"><span>v1.8</span><RouterLink to="/schema">打开 Schema 浏览器 →</RouterLink></div>
+          <div class="platform-schema-head"><span>v1.8</span><!-- <RouterLink to="/schema">打开 Schema 浏览器 →</RouterLink> --></div>
         </div>
         <table class="platform-table">
           <thead><tr><th>类型</th><th>Schema 名称</th><th>字段 / 属性</th><th>映射与生成规则</th><th>权限</th></tr></thead>
@@ -1471,7 +1471,7 @@ print(response.json())</pre>
 .platform-change-body>aside article>span { display:grid;gap:3px; }.platform-change-body>aside article strong { color:#344661;font-size:10px; }.platform-change-body>aside article em { color:#7b899e;font-size:9px;font-style:normal; }
 
 .platform-risk-list { display:grid; }.platform-risk-list article { position:relative;display:grid;grid-template-columns:9px minmax(0,1fr);gap:10px;min-height:88px;padding:14px;border-bottom:1px solid #e3ebf6;background:#fff; }.platform-risk-list article:last-child { border-bottom:0; }
-.platform-risk-list article>i { width:8px;height:8px;margin-top:5px;border-radius:50%;background:#f79009;box-shadow:0 0 0 4px #fef0c7; }
+.platform-risk-list article>i { width:8px;height:8px;margin-top:5px;border-radius:50%;background:#2e90fa;box-shadow:0 0 0 4px #d6e9ff; }
 .platform-risk-list article>div { display:grid;gap:3px; }
 .platform-risk-list article strong { color:#253752;font-size:11px; }.platform-risk-list article p { margin:0;color:#7b899e;font-size:9px;line-height:15px; }
 .platform-risk-list article nav { display:flex;justify-content:flex-end;gap:8px;margin-top:7px; }
