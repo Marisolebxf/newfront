@@ -52,9 +52,10 @@ const entityTypes = [
 ]
 
 const evidenceItems = ref([
-  { id: '1', label: '', table: '', recordId: '', checked: true },
+  { id: '1', label: '', table: '', recordId: '', excerpt: '', trust: '', checked: true },
 ])
 const extraEvidence = ref('')
+const relationVerdict = ref<'approve' | 'reject' | 'hold'>('approve')
 
 const attrVerdict = ref<'A' | 'B' | 'manual' | 'split'>('A')
 const attrManualOrg = ref('')
@@ -74,13 +75,13 @@ const initWorkspace = (item?: ReviewRecord) => {
   const id = getReviewTemplate(item).id
 
   if (id === 'T_MAP') {
-    if (item.type === 'Schema 批量映射失败' || item.id === 'PI-20260714-0102') {
+    if (item.type === 'Schema 字段映射失败' || item.id === 'PI-20260714-0102') {
       mappingRows.value = [
         { source: 'corp_name', sample: '华南智能芯片有限公司', target: 'name_zh', options: orgFieldOpts },
         { source: 'credit_no', sample: '91440300MA5F…', target: 'credit_code', options: orgFieldOpts },
         { source: 'registered_capital', sample: '5000 万元', target: 'registered_capital_value', options: orgFieldOpts },
       ]
-    } else if (item.type === '公共字典配置异常') {
+    } else if (item.type === '专利状态标准化失败') {
       mappingRows.value = [
         { source: 'legal_status_raw', sample: 'substantive-review', target: 'legal_status', options: patentFieldOpts },
       ]
@@ -92,7 +93,7 @@ const initWorkspace = (item?: ReviewRecord) => {
   }
 
   if (id === 'T_ENTITY') {
-    entityVerdict.value = item.type === '实体类型错误'
+    entityVerdict.value = item.type.includes('实体类型判断错误')
       ? 'retype'
       : item.type === '单任务执行失败'
         ? 'create'
@@ -102,22 +103,15 @@ const initWorkspace = (item?: ReviewRecord) => {
 
   if (id === 'T_RELATION') {
     const parts = item.object.split('→').map((s) => s.trim())
-    evidenceItems.value = [
-      {
-        id: '1',
-        label: '网页公告 / 合作记录',
-        table: item.sourceTable,
-        recordId: item.sourceRecordId,
-        checked: true,
-      },
-      {
-        id: '2',
-        label: '待补充：产学研合作公告或合同编号',
-        table: '—',
-        recordId: '—',
-        checked: false,
-      },
-    ]
+    evidenceItems.value = item.type.includes('合作关系')
+      ? [
+          { id: '1', label: '华南智能芯片官网新闻', table: item.sourceTable, recordId: item.sourceRecordId, excerpt: '双方将围绕智能芯片设计与云端算力平台展开联合技术研发。', trust: '企业官网 · 可信度 0.82', checked: true },
+          { id: '2', label: '第二独立来源', table: '—', recordId: '—', excerpt: '尚未获取，需补充合作公告、合同编号或权威媒体报道。', trust: '待补充', checked: false },
+        ]
+      : [
+          { id: '1', label: '参考文献原文片段', table: item.sourceTable, recordId: item.sourceRecordId, excerpt: '文末参考文献中出现《矩阵分析基础》，但未解析到完整 DOI。', trust: '论文原文 · 可信度 0.78', checked: true },
+          { id: '2', label: 'DOI / 标题交叉验证', table: '—', recordId: '—', excerpt: '尚未完成被引论文 DOI 与标题一致性校验。', trust: '待补充', checked: false },
+        ]
     if (parts.length >= 2) {
       // keep for display via record.object
     }
@@ -147,10 +141,10 @@ const candidateCard = computed(() => {
   }
   return {
     name: item.object,
-    type: item.type === '实体类型错误' ? 'Person' : '候选实体',
+    type: item.type.includes('实体类型判断错误') ? 'Person' : '候选实体',
     org: item.domain === '人才' || item.domain === '专利' ? '机构待核对 / 别名未归一' : item.domain,
     score: item.score || '—',
-    method: item.type === '实体类型错误' ? 'schema-classify' : 'fuzzy',
+    method: item.type.includes('实体类型判断错误') ? 'schema-classify' : 'fuzzy',
     shortName: name,
   }
 })
@@ -166,7 +160,7 @@ const stockCard = computed(() => {
       id: '—',
     }
   }
-  if (item.type === '实体类型错误') {
+  if (item.type.includes('实体类型判断错误')) {
     return { name: '建议目标类型 Expert', type: 'Expert', org: '中国科学院自动化研究所', id: '—' }
   }
   if (item.id === 'PI-20260714-0012' || item.object.includes('周启航')) {
@@ -201,11 +195,36 @@ const primaryActionLabel = computed(() => {
     if (entityVerdict.value === 'retype') return '改类型并重跑'
     return '驳回候选'
   }
+  if (templateId.value === 'T_RELATION') {
+    if (relationVerdict.value === 'reject') return '驳回该合作关系'
+    if (relationVerdict.value === 'hold') return '保持隔离，继续补证'
+    return '确认关系并重跑入图'
+  }
   return template.value?.actions.find((a) => a.kind === 'primary')?.label ?? '确认并重跑'
+})
+
+const isCooperationRelation = computed(() => record.value?.type.includes('合作关系') ?? false)
+const relationSchemaLabel = computed(() => isCooperationRelation.value ? 'COOPERATE_WITH\n企业合作' : 'CITES\n论文引用')
+const relationRuleSummary = computed(() => isCooperationRelation.value
+  ? '系统识别双方存在联合技术研发合作，但当前只有 1 个独立来源。'
+  : '系统识别两篇论文存在引用关系，但 DOI 与标题交叉验证不完整。')
+
+const relationEvidenceCount = computed(() => (
+  evidenceItems.value.filter((item) => item.checked && item.recordId !== '—').length
+  + (extraEvidence.value.trim() ? 1 : 0)
+))
+
+const isPrimaryDisabled = computed(() => {
+  if (!isEditable.value) return true
+  if (templateId.value === 'T_DQ_FILL') return !fillTitleZh.value.trim()
+  if (templateId.value === 'T_RELATION' && relationVerdict.value === 'approve') return relationEvidenceCount.value < 2
+  return false
 })
 
 const footerHint = computed(() => {
   if (isHistory.value) return '处理已完成'
+  if (templateId.value === 'T_DQ_FILL' && !fillTitleZh.value.trim()) return '请先补全论文中文标题，再保存并重跑校验'
+  if (templateId.value === 'T_RELATION' && relationVerdict.value === 'approve' && relationEvidenceCount.value < 2) return '确认入图前需补充第二个独立可信来源'
   if (impactScope.value === '批次级') return `批次级异常 · 确认后将从「${record.value?.node}」恢复公共流程`
   return `任务级异常 · 确认后将从「${record.value?.node}」重跑本对象`
 })
@@ -215,8 +234,12 @@ const backPath = computed(() => (
 ))
 
 const applySuggestedTitle = () => {
-  fillTitleZh.value = '知识图谱增量构建方法研究'
-  fillTitleEn.value = 'Incremental Knowledge Graph Construction Methods'
+  fillTitleZh.value = record.value?.id === 'PI-20260714-0008'
+    ? '面向产业链的知识图谱推理研究'
+    : '知识图谱增量构建方法研究'
+  fillTitleEn.value = record.value?.id === 'PI-20260714-0008'
+    ? 'Knowledge Graph Reasoning for Industrial Chains'
+    : 'Incremental Knowledge Graph Construction Methods'
 }
 
 const handleAction = (action: ReviewAction | { id: string; label: string; kind: string; rerun?: boolean }) => {
@@ -253,12 +276,23 @@ const runPrimary = () => {
     handleAction({ id: 'reject-candidate', label: '驳回候选', kind: 'secondary' })
     return
   }
+  if (templateId.value === 'T_RELATION' && relationVerdict.value !== 'approve') {
+    handleAction({
+      id: relationVerdict.value === 'reject' ? 'reject-extract' : 'keep-isolated',
+      label: primaryActionLabel.value,
+      kind: 'secondary',
+      rerun: relationVerdict.value === 'reject',
+    })
+    return
+  }
   const primary = template.value?.actions.find((a) => a.kind === 'primary')
   if (primary) handleAction({ ...primary, label: primaryActionLabel.value })
 }
 
 const secondaryActions = computed(() => (
-  template.value?.actions.filter((a) => a.kind !== 'primary') ?? []
+  templateId.value === 'T_RELATION'
+    ? []
+    : template.value?.actions.filter((a) => a.kind !== 'primary') ?? []
 ))
 </script>
 
@@ -267,7 +301,7 @@ const secondaryActions = computed(() => (
     <header class="rw-head">
       <div class="rw-head__main">
         <RouterLink :to="backPath">← 返回处理队列</RouterLink>
-        <h1>{{ isHistory ? '处理记录' : '人工审核' }}</h1>
+        <h1>{{ isHistory ? '处理记录' : '人工处理详情' }}</h1>
         <p>
           <code>{{ record.id }}</code>
           <span>{{ record.handler }}</span>
@@ -319,10 +353,10 @@ const secondaryActions = computed(() => (
             <option v-for="opt in row.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
           </select>
         </div>
-        <label v-if="record.type === '枚举异常'" class="check-line">
+        <label v-if="record.type.includes('标准化失败')" class="check-line">
           <input v-model="keepRawEnum" type="checkbox" :disabled="!isEditable" /> 保留原始值用于追溯
         </label>
-        <label v-if="record.type === '公共字典配置异常'" class="inline-select">
+        <label v-if="record.type === '专利状态标准化失败'" class="inline-select">
           <span>字典版本</span>
           <select v-model="dictVersion" :disabled="!isEditable">
             <option value="v1.2">回滚到 dict-patent-v1.2</option>
@@ -368,17 +402,24 @@ const secondaryActions = computed(() => (
 
       <!-- T_RELATION -->
       <section v-else-if="templateId === 'T_RELATION'" class="zone zone-relation">
+        <div class="relation-metrics">
+          <article><span>当前置信度</span><strong>{{ record.score || '—' }}</strong><em>入图阈值 0.85</em></article>
+          <article><span>独立证据</span><strong>{{ relationEvidenceCount }} / 2</strong><em>{{ relationEvidenceCount >= 2 ? '已达人工确认要求' : '未达自动入图要求' }}</em></article>
+          <article><span>当前结果</span><strong>已隔离</strong><em>未写入生产图谱</em></article>
+        </div>
         <div class="rel-card">
           <strong>{{ relationSides.left }}</strong>
-          <em>COOPERATE_WITH / 主题相近</em>
+          <em class="relation-schema">{{ relationSchemaLabel }}</em>
           <strong>{{ relationSides.right }}</strong>
-          <p>置信度 {{ record.score || '—' }} · {{ record.ruleId }}（需满足独立可信来源条件）</p>
+          <p>抽取结果：{{ relationRuleSummary }}规则 {{ record.ruleId }} 要求至少 2 个可信证据。</p>
         </div>
+        <h3 class="zone-subtitle">关系证据</h3>
         <div class="evidence-list">
           <label v-for="item in evidenceItems" :key="item.id" class="evidence-item">
-            <input v-model="item.checked" type="checkbox" :disabled="!isEditable" />
+            <input v-model="item.checked" type="checkbox" :disabled="!isEditable || item.recordId === '—'" />
             <div>
-              <strong>{{ item.label }}</strong>
+              <strong>{{ item.label }} <em>{{ item.trust }}</em></strong>
+              <p>{{ item.excerpt }}</p>
               <span>{{ item.table }} / {{ item.recordId }}</span>
             </div>
           </label>
@@ -387,6 +428,12 @@ const secondaryActions = computed(() => (
           <span>补充证据（链接或记录 ID）</span>
           <input v-model="extraEvidence" placeholder="例如：COOP-89321-B 或公告 URL" />
         </label>
+        <h3 class="zone-subtitle">处理结论</h3>
+        <div class="verdict relation-verdict">
+          <label :class="{ active: relationVerdict === 'approve' }"><input v-model="relationVerdict" type="radio" value="approve" :disabled="!isEditable" /><span><strong>确认合作关系</strong><small>证据充分，允许该关系进入图谱</small></span></label>
+          <label :class="{ active: relationVerdict === 'hold' }"><input v-model="relationVerdict" type="radio" value="hold" :disabled="!isEditable" /><span><strong>保持隔离</strong><small>暂不入图，等待补充第二独立来源</small></span></label>
+          <label :class="{ active: relationVerdict === 'reject' }"><input v-model="relationVerdict" type="radio" value="reject" :disabled="!isEditable" /><span><strong>驳回关系</strong><small>认定当前证据不支持合作关系，退回抽取节点</small></span></label>
+        </div>
       </section>
 
       <!-- T_ATTR -->
@@ -418,10 +465,33 @@ const secondaryActions = computed(() => (
 
       <!-- T_DQ_FILL -->
       <section v-else-if="templateId === 'T_DQ_FILL'" class="zone zone-fill">
-        <p class="zone-banner">缺失字段 title = null · 可参考 DOI={{ record.sourceResult.match(/DOI=([^\s，,]+)/)?.[1] || '10.2026/kg.104' }}</p>
-        <button v-if="isEditable" class="linkish" type="button" @click="applySuggestedTitle">一键填入 DOI 建议标题</button>
-        <label class="wide-field"><span>title_zh</span><input v-model="fillTitleZh" :disabled="!isEditable" placeholder="论文中文标题" /></label>
-        <label class="wide-field"><span>title_en</span><input v-model="fillTitleEn" :disabled="!isEditable" placeholder="论文英文标题（可选）" /></label>
+        <p class="zone-banner">必填规则 {{ record.ruleId }} 校验失败：原始记录 <code>title = null</code>，已阻止该记录进入标准表。</p>
+        <div class="fill-layout">
+          <section class="source-snapshot">
+            <header><strong>原始记录</strong><span>{{ record.sourceTable }} / {{ record.sourceRecordId }}</span></header>
+            <dl>
+              <div class="is-error"><dt>title</dt><dd>null <em>必填缺失</em></dd></div>
+              <div><dt>doi</dt><dd>10.2026/kg.104</dd></div>
+              <div><dt>authors</dt><dd>陈晓峰，李静，王宇</dd></div>
+              <div><dt>publish_year</dt><dd>2026</dd></div>
+              <div><dt>journal</dt><dd>情报学报</dd></div>
+              <div><dt>abstract</dt><dd>面向产业链多源数据，研究知识图谱构建与关系推理方法…</dd></div>
+            </dl>
+          </section>
+          <section class="doi-suggestion">
+            <header><strong>DOI 参考信息</strong><span>可信度 0.98</span></header>
+            <h3>《面向产业链的知识图谱推理研究》</h3>
+            <p>Knowledge Graph Reasoning for Industrial Chains</p>
+            <small>DOI、作者、发表年份与原始记录一致</small>
+            <button v-if="isEditable" class="linkish" type="button" @click="applySuggestedTitle">采用此标题</button>
+          </section>
+        </div>
+        <div class="fill-form">
+          <h3 class="zone-subtitle">补录结果</h3>
+          <label class="wide-field"><span>title_zh <b>必填</b></span><input v-model="fillTitleZh" :disabled="!isEditable" placeholder="论文中文标题" /></label>
+          <label class="wide-field"><span>title_en</span><input v-model="fillTitleEn" :disabled="!isEditable" placeholder="论文英文标题（可选）" /></label>
+          <p class="fill-rerun-note">保存后将仅从“必填校验”节点重跑当前论文记录，不影响同批次其他数据。</p>
+        </div>
       </section>
 
       <!-- T_DQ_MERGE -->
@@ -503,7 +573,7 @@ const secondaryActions = computed(() => (
           {{ action.label }}
         </button>
         <label class="note-inline"><input v-model="note" placeholder="备注（可选）" /></label>
-        <button class="primary" type="button" @click="runPrimary">{{ primaryActionLabel }}</button>
+        <button class="primary" type="button" :disabled="isPrimaryDisabled" @click="runPrimary">{{ primaryActionLabel }}</button>
       </div>
     </footer>
   </div>
@@ -772,6 +842,11 @@ const secondaryActions = computed(() => (
   font-style: normal;
 }
 
+.rel-card .relation-schema {
+  line-height: 18px;
+  white-space: pre-line;
+}
+
 .rel-card p {
   grid-column: 1 / -1;
   margin: 8px 0 0;
@@ -826,6 +901,217 @@ const secondaryActions = computed(() => (
 
 .evidence-item span {
   color: #7890b5;
+  font-size: 10px;
+}
+
+.relation-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.relation-metrics article {
+  display: grid;
+  gap: 4px;
+  padding: 11px 13px;
+  border: 1px solid #d5e3f5;
+  border-radius: 7px;
+  background: #f8fbff;
+}
+
+.relation-metrics span,
+.relation-metrics em {
+  color: #7890b5;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.relation-metrics strong {
+  color: #263650;
+  font-size: 17px;
+}
+
+.zone-subtitle {
+  margin: 14px 0 8px;
+  color: #263650;
+  font-size: 12px;
+}
+
+.evidence-item {
+  align-items: flex-start;
+}
+
+.evidence-item div {
+  flex: 1;
+}
+
+.evidence-item strong {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.evidence-item strong em {
+  color: #067647;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.evidence-item p {
+  margin: 5px 0;
+  color: #475467;
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.relation-verdict {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.relation-verdict label {
+  align-items: flex-start;
+}
+
+.relation-verdict label > span {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+}
+
+.relation-verdict small {
+  width: auto;
+  margin: 0;
+  line-height: 16px;
+}
+
+.fill-layout {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 12px;
+}
+
+.source-snapshot,
+.doi-suggestion,
+.fill-form {
+  overflow: hidden;
+  border: 1px solid #d5e3f5;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.source-snapshot header,
+.doi-suggestion header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5edf8;
+  background: #f8fbff;
+}
+
+.source-snapshot header span,
+.doi-suggestion header span {
+  color: #7890b5;
+  font-size: 10px;
+}
+
+.source-snapshot dl {
+  margin: 0;
+}
+
+.source-snapshot dl > div {
+  display: grid;
+  grid-template-columns: 105px 1fr;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.source-snapshot dt {
+  color: #7890b5;
+  font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.source-snapshot dd {
+  margin: 0;
+  color: #344054;
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.source-snapshot .is-error {
+  background: #fff6f5;
+}
+
+.source-snapshot .is-error dd {
+  color: #b42318;
+}
+
+.source-snapshot dd em {
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 99px;
+  background: #fee4e2;
+  font-size: 9px;
+  font-style: normal;
+}
+
+.doi-suggestion {
+  padding-bottom: 14px;
+  background: linear-gradient(145deg, #f5f9ff, #fff);
+}
+
+.doi-suggestion header {
+  margin-bottom: 16px;
+}
+
+.doi-suggestion h3,
+.doi-suggestion p,
+.doi-suggestion small,
+.doi-suggestion button {
+  margin-right: 14px;
+  margin-left: 14px;
+}
+
+.doi-suggestion h3 {
+  margin-top: 0;
+  margin-bottom: 7px;
+  font-size: 15px;
+}
+
+.doi-suggestion p {
+  color: #475467;
+  font-size: 11px;
+}
+
+.doi-suggestion small {
+  display: block;
+  margin-bottom: 15px;
+  color: #067647;
+  font-size: 10px;
+}
+
+.fill-form {
+  margin-top: 12px;
+  padding: 0 13px 13px;
+  background: #fbfdff;
+}
+
+.fill-form .wide-field span b {
+  margin-left: 5px;
+  color: #d92d20;
+  font-size: 9px;
+}
+
+.fill-rerun-note {
+  margin: 11px 0 0;
+  padding: 8px 10px;
+  border-radius: 5px;
+  background: #f0f5ff;
+  color: #52647f;
   font-size: 10px;
 }
 
@@ -966,6 +1252,13 @@ const secondaryActions = computed(() => (
   color: #fff;
 }
 
+.rw-foot button:disabled {
+  border-color: #d0d5dd;
+  background: #eaecf0;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
 .rw-foot button.danger {
   border-color: #f1b8b3;
   color: #b42318;
@@ -978,6 +1271,14 @@ const secondaryActions = computed(() => (
 .rw-empty {
   padding: 48px;
   text-align: center;
+}
+
+@media (max-width: 1000px) {
+  .relation-metrics,
+  .relation-verdict,
+  .fill-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .rw-empty a {

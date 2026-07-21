@@ -8,7 +8,7 @@ const activeTab = ref('标准实体')
 const keyword = ref('')
 // 版本记录（已隐藏）
 // const schemaVersionMessage = ref('')
-const tabs = ['标准实体', '事实关系', '推理关系', '属性定义', '候选层', '实体对齐']
+const tabs = ['标准实体', '事实关系', '推理关系', '属性定义']
 
 const entities: Entity[] = [
   { name: 'Expert', label: '专家 / 人才 / 学者', level: '核心实体', key: 'scholar_id / expert_id', source: 'dwd_scholar / dwd_paper_author / dwd_project_person / dwd_patent_inventor', description: '统一承载科研与产业人才主体' },
@@ -100,30 +100,6 @@ const attributes = [
   { entity: 'ResearchField', key: 'field_id / discipline_code', core: 'standard_name, alias, field_type, parent_field', dynamic: '别名与上下位字典', source: 'dim_research_field / dim_discipline_code' },
 ]
 
-const candidates = [
-  { name: 'PersonMention', target: 'Expert / Person', source: '论文作者、项目人员、发明人、高管、股东、报告作者' },
-  { name: 'OrganizationMention', target: 'Organization', source: '论文单位、项目机构、专利申请人/权利人、专家机构' },
-  { name: 'PaperMention', target: 'Paper', source: '项目产出论文、引用论文、报告相关论文' },
-  { name: 'PatentMention', target: 'Patent', source: '项目产出专利、企业专利' },
-  { name: 'ProjectMention', target: 'Project', source: '多来源项目记录' },
-  { name: 'ProductMention', target: 'Product', source: '企业主营产品、产业链产品' },
-  { name: 'FieldMention', target: 'ResearchField', source: '关键词、学科、研究方向、专利分类' },
-  { name: 'EventMention', target: 'Event', source: '企业资讯、产业动态、政策事件' },
-  { name: 'ChainNodeMention', target: 'IndustryChainNode', source: '多来源产业链节点' },
-]
-
-const alignmentRules = [
-  { object: '人员', mention: 'PersonMention', target: 'Expert / Person', strong: 'scholar_id、作者邮箱、作者 ID', weak: '姓名、英文名、机构、方向、论文、项目、专利', auto: '邮箱一致；或姓名+机构+领域高度一致', review: '同名多人、机构或领域冲突' },
-  { object: '机构', mention: 'OrganizationMention', target: 'Organization', strong: 'org_id、external_id、credit_code', weak: '名称、别名、地址、省市、国家、行业', auto: '统一社会信用代码一致', review: '名称相似但类型或地址不同' },
-  { object: '论文', mention: 'PaperMention', target: 'Paper', strong: 'DOI、paper_id', weak: '标题、作者、年份、期刊', auto: 'DOI 一致', review: '标题相似但作者/年份不一致' },
-  { object: '专利', mention: 'PatentMention', target: 'Patent', strong: 'patent_id、公布号、申请号', weak: '标题、申请人、发明人、日期', auto: '专利号一致', review: '标题相似但申请人冲突' },
-  { object: '项目', mention: 'ProjectMention', target: 'Project', strong: 'id、project_number', weak: '项目名称、资助机构、年份', auto: '项目编号一致', review: '名称相似但来源不同' },
-  { object: '产品', mention: 'ProductMention', target: 'Product', strong: '产品 ID', weak: '产品名、企业、产业链节点', auto: '企业+产品名一致', review: '同名不同产品' },
-  { object: '研究方向', mention: 'FieldMention', target: 'ResearchField', strong: '学科代码、IPC/IPCR', weak: '关键词、学科名、别名', auto: '标准代码一致', review: '名称模糊、上下级不清' },
-  { object: '事件', mention: 'EventMention', target: 'Event', strong: 'event_id、news_id、URL', weak: '标题、时间、来源、主体', auto: 'URL 一致', review: '标题相似但主体不同' },
-  { object: '产业链节点', mention: 'ChainNodeMention', target: 'IndustryChainNode', strong: 'chain_code + node_id', weak: '节点名、父节点、节点环节', auto: '联合主键一致', review: '节点名相同但产业链不同' },
-]
-
 // 版本记录（已隐藏）
 // const schemaVersions = [
 //   { version: 'v1.8', status: '当前版本', time: '2026-07-12 22:10', entities: '14 个标准实体', relations: '42 标准 / 9 推理', change: '统一候选层字段；新增 Event 类型；调整 3 项关系约束', publisher: '张建图' },
@@ -137,8 +113,6 @@ const filteredEntities = computed(() => entities.filter(matches))
 const filteredFacts = computed(() => factRelations.filter(matches))
 const filteredInference = computed(() => inferenceRelations.filter(matches))
 const filteredAttributes = computed(() => attributes.filter(matches))
-const filteredCandidates = computed(() => candidates.filter(matches))
-const filteredAlignment = computed(() => alignmentRules.filter(matches))
 </script>
 
 <template>
@@ -147,13 +121,12 @@ const filteredAlignment = computed(() => alignmentRules.filter(matches))
       <article><span>标准实体</span><strong>14</strong><em>专家、机构、论文等</em></article>
       <article><span>标准事实关系</span><strong>42</strong><em>专家、机构、成果等</em></article>
       <article><span>业务推理关系</span><strong>9</strong><em>均基于事实关系计算</em></article>
-      <article><span>候选实体类型</span><strong>9</strong><em>用于对齐与人工审核</em></article>
       <!-- <article><span>当前 Schema 版本</span><strong>v1.8</strong><em>已发布 · 2026-07-12</em></article> -->
     </section>
 
     <section class="schema-shell">
       <nav class="schema-tabs"><button v-for="tab in tabs" :key="tab" type="button" :class="{ active: activeTab === tab }" @click="activeTab=tab;keyword=''">{{ tab }}</button></nav>
-      <div class="schema-toolbar"><div><strong>{{ activeTab }}</strong><span v-if="activeTab === '候选层'">候选数据不直接作为业务展示主体</span><span v-else-if="activeTab === '属性定义'">枚举字典作为属性约束统一维护</span></div><label><span>⌕</span><input v-model="keyword" :placeholder="`搜索${activeTab}`" /></label></div>
+      <div class="schema-toolbar"><div><strong>{{ activeTab }}</strong><span v-if="activeTab === '属性定义'">枚举字典作为属性约束统一维护</span></div><label><span>⌕</span><input v-model="keyword" :placeholder="`搜索${activeTab}`" /></label></div>
       <!-- <p v-if="schemaVersionMessage" class="schema-version-message">{{ schemaVersionMessage }}</p> -->
 
       <div v-if="activeTab === '标准实体'" class="schema-table-wrap"><table><thead><tr><th>实体中文名</th><th>Schema 名称</th><th>主键 / 唯一标识</th><th>主要来源表组</th><th>建模说明</th></tr></thead><tbody><tr v-for="row in filteredEntities" :key="row.name"><td><b>{{ row.label }}</b></td><td><code>{{ row.name }}</code></td><td>{{ row.key }}</td><td>{{ row.source }}</td><td>{{ row.description }}</td></tr></tbody></table></div>
@@ -163,14 +136,6 @@ const filteredAlignment = computed(() => alignmentRules.filter(matches))
       <div v-else-if="activeTab === '推理关系'" class="schema-table-wrap"><table><thead><tr><th>推理关系</th><th>Schema 名称</th><th>起点</th><th>终点</th><th>生成依据</th></tr></thead><tbody><tr v-for="row in filteredInference" :key="row.name"><td><b>{{ row.label }}</b></td><td><code>{{ row.name }}</code></td><td>{{ row.source }}</td><td>{{ row.target }}</td><td>{{ row.basis }}</td></tr></tbody></table></div>
 
       <div v-else-if="activeTab === '属性定义'" class="schema-table-wrap"><table><thead><tr><th>实体</th><th>主键</th><th>核心属性</th><th>动态属性 / 补充</th><th>主要来源</th></tr></thead><tbody><tr v-for="row in filteredAttributes" :key="row.entity"><td><code>{{ row.entity }}</code></td><td><b>{{ row.key }}</b></td><td class="mono-list">{{ row.core }}</td><td>{{ row.dynamic }}</td><td>{{ row.source }}</td></tr></tbody></table></div>
-
-      <div v-else-if="activeTab === '候选层'" class="candidate-layout">
-        <div class="candidate-note"><strong>第一版采用混合方案</strong><p>已对齐数据只写标准实体；低置信度、冲突和待审核候选保留，用于人工审核与证据追溯。</p></div>
-        <div class="schema-table-wrap"><table><thead><tr><th>候选实体</th><th>对齐目标</th><th>主要来源</th></tr></thead><tbody><tr v-for="row in filteredCandidates" :key="row.name"><td><code>{{ row.name }}</code></td><td><b>{{ row.target }}</b></td><td>{{ row.source }}</td></tr></tbody></table></div>
-        <div class="mention-fields"><strong>候选实体通用字段</strong><span v-for="item in ['mention_id', 'raw_name', 'raw_name_en', 'raw_org', 'raw_role', 'source_table', 'source_field', 'source_record_id', 'source_time', 'context', 'match_status', 'matched_entity_type', 'matched_entity_id', 'confidence', 'match_method', 'review_status']" :key="item">{{ item }}</span></div>
-      </div>
-
-      <div v-else-if="activeTab === '实体对齐'" class="schema-table-wrap"><table><thead><tr><th>对齐对象</th><th>候选 → 标准实体</th><th>强匹配字段</th><th>弱匹配字段</th><th>自动合并条件</th><th>转人工条件</th></tr></thead><tbody><tr v-for="row in filteredAlignment" :key="row.object"><td><b>{{ row.object }}</b></td><td><code>{{ row.mention }}</code><span class="arrow">→</span><code>{{ row.target }}</code></td><td>{{ row.strong }}</td><td>{{ row.weak }}</td><td><span class="auto">{{ row.auto }}</span></td><td><span class="review">{{ row.review }}</span></td></tr></tbody></table></div>
 
       <!-- 版本记录（已隐藏）
       <div v-else class="schema-table-wrap schema-version-table"><table><thead><tr><th>版本</th><th>状态</th><th>发布时间</th><th>实体范围</th><th>关系范围</th><th>变更内容</th><th>发布人</th><th>操作</th></tr></thead><tbody><tr v-for="row in schemaVersions" :key="row.version"><td><code>{{ row.version }}</code></td><td><span :class="row.status === '当前版本' ? 'core' : 'support'">{{ row.status }}</span></td><td>{{ row.time }}</td><td>{{ row.entities }}</td><td>{{ row.relations }}</td><td>{{ row.change }}</td><td>{{ row.publisher }}</td><td><div class="schema-version-actions"><button type="button" @click="schemaVersionMessage = `已打开 ${row.version} 的完整变更清单。`">变更详情</button><button v-if="row.status !== '当前版本'" class="danger" type="button" @click="schemaVersionMessage = `已创建回退至 ${row.version} 的申请，通过影响分析与审批后才会执行。`">申请回退</button></div></td></tr></tbody></table></div>
@@ -231,7 +196,7 @@ const filteredAlignment = computed(() => alignmentRules.filter(matches))
 
 @media(max-width:1500px){.schema-flow li{padding-right:18px}.schema-flow li span{font-size:10px}.trace-card dl{grid-template-columns:1fr}.trace-card dl>div{border-right:0}}
 @media(max-width:1100px){.schema-flow ol{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}.schema-flow li,.schema-flow li:last-child{border:1px solid #d5e4f7;border-radius:6px}.schema-flow li::after{display:none}.trace-layout{grid-template-columns:1fr}.trace-layout>aside{grid-column:1;align-items:flex-start;flex-direction:column;gap:7px}.trace-card dl{grid-template-columns:repeat(2,1fr)}.trace-card dl>div{border-right:1px solid #e8eef7}.trace-card dl>div:nth-child(2n){border-right:0}}
-.schema-summary{grid-template-columns:repeat(4,minmax(0,1fr))}
+.schema-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
 .schema-version-message{margin:0;padding:9px 13px;border-bottom:1px solid #b7d0f5;background:#eef5ff;color:#344f7a;font-size:11px}
 .schema-version-table{max-height:470px}.schema-version-table td:nth-child(6){min-width:280px}.schema-version-actions{display:flex;gap:6px}.schema-version-actions button{padding:3px 7px;border:1px solid #bdd0ea;border-radius:4px;background:#fff;color:#165dff;font-size:9px;white-space:nowrap;cursor:pointer}.schema-version-actions button.danger{border-color:#f6b9b4;color:#b42318}
 @media(max-width:1500px){.schema-summary{grid-template-columns:repeat(3,1fr)}}
